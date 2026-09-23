@@ -1,0 +1,9 @@
+# Runtime dependencies (pinned, tested with Python 3.11 / 3.12)
+SQLAlchemy[asyncio]==2.0.54
+asyncpg==0.31.0
+aiosqlite==0.22.1
+alembic==1.20.0
+httpx==0.28.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
+tzdata==2025.2

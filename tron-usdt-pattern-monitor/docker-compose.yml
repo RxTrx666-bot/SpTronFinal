@@ -1,0 +1,39 @@
+# docker compose up -d        -> PostgreSQL + monitor, both restart automatically
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tron_usdt
+      POSTGRES_USER: tron
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data          # persistent storage
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tron -d tron_usdt"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 256mb
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  monitor:
+    build: .
+    image: tron-usdt-pattern-monitor:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Inside compose the database is the "postgres" service.
+      DATABASE_URL: postgresql+asyncpg://tron:${POSTGRES_PASSWORD}@postgres:5432/tron_usdt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "10" }
+
+volumes:
+  pgdata:

@@ -25,7 +25,6 @@ from typing import Any
 import httpx
 
 from app.collector.address import is_valid_tron_address
-from app.config.settings import Settings
 from app.database import repository as repo
 from app.domain import WatchlistStatus, ms_to_datetime
 from app.logging_setup import get_logger

@@ -86,5 +86,5 @@ def configure_logging(level: str = "INFO", fmt: str = "text") -> None:
     handler.setFormatter(_Formatter(fmt))
     root.addHandler(handler)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
-    for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "aiosqlite", "asyncio"):
+    for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "aiosqlite", "asyncio", "alembic"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
