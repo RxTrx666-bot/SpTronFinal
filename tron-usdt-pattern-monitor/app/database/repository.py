@@ -279,6 +279,7 @@ async def upsert_pair_stats(
     now: datetime,
     ratio: Fraction,
     flag_analysis: bool,
+    min_large_raw: int = 0,
 ) -> list[tuple[str, str]]:
     """Atomically fold new confirmed transfers into per-pair statistics.
 
@@ -306,7 +307,10 @@ async def upsert_pair_stats(
                 first_seen_at=a.first,
                 last_seen_at=a.last,
                 sequence_count=0,
-                needs_analysis=flag_analysis and a.count >= 2 and a.largest * den >= a.smallest * num,
+                needs_analysis=flag_analysis
+                and a.count >= 2
+                and a.largest >= min_large_raw
+                and a.largest * den >= a.smallest * num,
                 created_at=now,
                 updated_at=now,
             )
@@ -331,7 +335,7 @@ async def upsert_pair_stats(
         if flag_analysis:
             set_["needs_analysis"] = or_(
                 wp.needs_analysis,
-                ex.largest_amount_raw * den >= new_small * num,
+                and_(ex.largest_amount_raw >= min_large_raw, ex.largest_amount_raw * den >= new_small * num),
             )
         stmt = ins.on_conflict_do_update(index_elements=["sender", "recipient"], set_=set_).returning(
             WalletPair.sender, WalletPair.recipient, WalletPair.needs_analysis
@@ -366,12 +370,15 @@ async def flagged_pairs(session: AsyncSession, limit: int = 500, after_id: int =
     return [(r.id, r.sender, r.recipient) for r in rows]
 
 
-async def flag_backfill_candidates(session: AsyncSession, *, min_transfers: int, ratio: Fraction) -> int:
+async def flag_backfill_candidates(
+    session: AsyncSession, *, min_transfers: int, ratio: Fraction, min_large_raw: int = 0
+) -> int:
     """After a historical backfill, flag every pair that could contain a pattern."""
     res = await session.execute(
         update(WalletPair)
         .where(
             WalletPair.total_transfers >= min_transfers,
+            WalletPair.largest_amount_raw >= min_large_raw,
             WalletPair.largest_amount_raw * ratio.denominator >= WalletPair.smallest_amount_raw * ratio.numerator,
         )
         .values(needs_analysis=True)

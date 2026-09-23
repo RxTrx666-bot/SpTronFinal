@@ -129,6 +129,7 @@ def detect_sequences(
     ratio: Fraction,
     max_followup: timedelta,
     dust_floor_raw: int = 0,
+    min_large_raw: int = 0,
 ) -> list[DetectedSequence]:
     """Pair each transfer with the most recent unused earlier transfer of the same
     relationship that it exceeds by ``ratio`` within ``max_followup``.
@@ -141,6 +142,8 @@ def detect_sequences(
     used_as_large: set[int] = set()
     out: list[DetectedSequence] = []
     for j, x in enumerate(txs):
+        if x.amount_raw < min_large_raw:
+            continue  # too small to ever be the LARGE side
         for i in range(j - 1, -1, -1):
             t = txs[i]
             if x.timestamp - t.timestamp > max_followup:
@@ -393,6 +396,7 @@ def analyze_history(
         ratio=settings.ratio_fraction,
         max_followup=timedelta(hours=settings.max_followup_hours),
         dust_floor_raw=settings.dust_floor_raw,
+        min_large_raw=settings.min_large_raw,
     )
     return build_model(sender, recipient, history, seqs, now, settings)
 

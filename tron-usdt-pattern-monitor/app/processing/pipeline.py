@@ -124,7 +124,7 @@ class TransactionMatcher:
                         created = await self._create_test_alert(s, snap, tx, processing_start, confirmed)
             elif not m.matched:
                 pending = await repo.pending_test_events(s, tx.sender, tx.recipient, tx.timestamp, tx.id)
-                te = select_followup(pending, tx.amount_raw, tx.timestamp, self.s.ratio_fraction)
+                te = select_followup(pending, tx.amount_raw, tx.timestamp, self.s.ratio_fraction, self.s.min_large_raw)
                 if te is not None and not too_old:
                     followed_pair = await self._create_followup(s, te, pending, tx, processing_start, confirmed)
             if tx.upgraded and self.s.send_confirmation_alerts:
@@ -331,6 +331,7 @@ class Pipeline:
                 now=start,
                 ratio=self.s.ratio_fraction,
                 flag_analysis=live,
+                min_large_raw=self.s.min_large_raw,
             )
         self.seen.mark(events)
 
