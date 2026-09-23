@@ -34,12 +34,15 @@ from app.simulation.source import SimulatedEventSource, make_event, tx_hash
 from app.telegram.alerts import AlertSink, CompositeSink, ConsoleSink, RecordingSink
 
 W = {name: address_from_seed(f"sim-wallet-{name}") for name in "ABCDEFMNPQXYZ"}
+# Part 3 uses its own wallets so it can share a database with parts 1-2.
+W3 = {name: address_from_seed(f"sim3-wallet-{name}") for name in "AB"}
 OTHER_TOKEN = address_from_seed("some-other-trc20-token")
 
 
 class Sim:
-    def __init__(self, app: Application, src: SimulatedEventSource, rec: RecordingSink, contract: str) -> None:
+    def __init__(self, app: Application, src: SimulatedEventSource, rec: RecordingSink, contract: str, wallets=None) -> None:
         self.app, self.src, self.rec, self.contract = app, src, rec, contract
+        self.w = wallets or W
         self.failures: list[str] = []
 
     def check(self, cond: bool, what: str) -> None:
@@ -50,7 +53,7 @@ class Sim:
     def event(self, s: str, r: str, amount, when: datetime, *, unconfirmed=False, txid=None) -> dict:
         return self.src.add(
             make_event(
-                sender=W[s], recipient=W[r], amount_usdt=amount, ts_ms=datetime_to_ms(when),
+                sender=self.w[s], recipient=self.w[r], amount_usdt=amount, ts_ms=datetime_to_ms(when),
                 contract=self.contract, txid=txid, unconfirmed=unconfirmed,
             )
         )
@@ -72,7 +75,7 @@ class Sim:
 
     async def entry(self, s: str, r: str):
         async with self.app.session_factory() as ss:
-            return await repo.get_watchlist(ss, W[s], W[r])
+            return await repo.get_watchlist(ss, self.w[s], self.w[r])
 
 
 def _types(msgs: list[str]) -> list[str]:
@@ -236,8 +239,13 @@ async def part3(database_url: str, extra_sink: AlertSink | None) -> list[str]:
     src = SimulatedEventSource()
     rec = RecordingSink()
     app = Application(settings, source=src, sink=CompositeSink(rec, extra_sink or ConsoleSink()), clock=clock)
-    sim = Sim(app, src, rec, settings.usdt_contract_address)
+    sim = Sim(app, src, rec, settings.usdt_contract_address, W3)
     await app.start()
+    # Part 3 starts its own (simulated) clock 3 h in the past: point the live cursor there.
+    start_ms = datetime_to_ms(clock.now())
+    async with app.session_factory() as ss, ss.begin():
+        await repo.set_state(ss, "confirmed_cursor_ms", str(start_ms), clock.now())
+    app.collector.stats.confirmed_cursor_ms = start_ms
     print("   (MIN_SUCCESSFUL_SEQUENCES=2 so the 5-step sequence can activate; the default is 3)")
     steps = [("TEST", 5, 0), ("LARGE", 20_000, 20), ("TEST", 5, 40), ("LARGE", 30_000, 58), ("TEST", 10, 90)]
     for label, amount, minute in steps:
@@ -278,8 +286,7 @@ async def run_simulation(database_url: str = "sqlite+aiosqlite:///:memory:", use
         tg = TelegramClient(s.telegram_bot_token)
         extra = CompositeSink(ConsoleSink(), TelegramSink(tg, s.telegram_chat_id))
     failures = await part1_and_2(database_url, extra)
-    url3 = database_url if ":memory:" in database_url else database_url.replace(".db", "-part3.db")
-    failures += await part3(url3, extra)
+    failures += await part3(database_url, extra)
     if tg:
         await tg.close()
     _banner("SIMULATION RESULT")
