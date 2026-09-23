@@ -12,7 +12,7 @@ from datetime import datetime
 from fractions import Fraction
 from typing import Any
 
-from sqlalchemy import and_, delete, func, or_, select, tuple_, update
+from sqlalchemy import and_, delete, func, or_, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.amounts import raw_to_usdt
@@ -573,8 +573,12 @@ async def insert_alert(session: AsyncSession, **values) -> int | None:
     return row.id if row else None
 
 
-async def next_due_alert(session: AsyncSession, now: datetime, *, ignore_schedule: bool = False) -> Alert | None:
+async def next_due_alert(
+    session: AsyncSession, now: datetime, *, ignore_schedule: bool = False, skip: set[int] | None = None
+) -> Alert | None:
     cond = [Alert.status == AlertStatus.PENDING.value]
+    if skip:
+        cond.append(Alert.id.not_in(list(skip)))
     if not ignore_schedule:
         cond.append(or_(Alert.next_attempt_at.is_(None), Alert.next_attempt_at <= now))
     return (
@@ -622,7 +626,10 @@ async def set_state(session: AsyncSession, key: str, value: str, now: datetime) 
 
 
 async def table_counts(session: AsyncSession) -> dict[str, int]:
+    """Row counts.  On PostgreSQL the two big tables use the planner estimate
+    (instant) instead of COUNT(*) over tens of millions of rows."""
     out = {}
+    estimated = {"transactions", "wallet_pairs"} if session.bind.dialect.name == "postgresql" else set()
     for name, model in (
         ("transactions", Transaction),
         ("wallet_pairs", WalletPair),
@@ -631,5 +638,10 @@ async def table_counts(session: AsyncSession) -> dict[str, int]:
         ("followup_events", FollowupEvent),
         ("alerts", Alert),
     ):
+        if name in estimated:
+            est = (await session.execute(text("SELECT reltuples::bigint FROM pg_class WHERE relname = :t"), {"t": name})).scalar()
+            if est is not None and est > 100_000:
+                out[name] = int(est)
+                continue
         out[name] = int((await session.execute(select(func.count()).select_from(model))).scalar_one())
     return out

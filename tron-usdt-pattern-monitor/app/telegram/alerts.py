@@ -105,12 +105,12 @@ class AlertDispatcher:
         if n:
             log.warning("Re-queued alerts interrupted by a previous shutdown", count=n)
 
-    async def send_one(self, *, ignore_schedule: bool = False) -> bool:
-        """Deliver the highest-priority due alert. Returns False when none is due."""
+    async def send_one(self, *, ignore_schedule: bool = False, skip: set[int] | None = None) -> int | None:
+        """Deliver the highest-priority due alert. Returns its id, or None when none is due."""
         async with self.sf() as s, s.begin():
-            alert = await repo.next_due_alert(s, _utcnow(), ignore_schedule=ignore_schedule)
+            alert = await repo.next_due_alert(s, _utcnow(), ignore_schedule=ignore_schedule, skip=skip)
             if alert is None:
-                return False
+                return None
             alert.status = AlertStatus.SENDING.value
             alert.attempts += 1
             alert_id, text, attempts = alert.id, alert.message_text, alert.attempts
@@ -134,7 +134,7 @@ class AlertDispatcher:
                 log.error("Telegram alert permanently failed", alert_id=alert_id, attempts=attempts, error=str(exc)[:200])
             else:
                 log.warning("Telegram send failed; will retry", alert_id=alert_id, attempt=attempts, retry_in=f"{delay:.1f}s", error=str(exc)[:200])
-            return True
+            return alert_id
         end = _utcnow()
         async with self.sf() as s, s.begin():
             a = await s.get(repo.Alert, alert_id)
@@ -159,19 +159,23 @@ class AlertDispatcher:
             if pstart and pend:
                 fields["processing_ms"] = int((pend - pstart).total_seconds() * 1000)
         log.info("Telegram alert sent", **fields)
-        return True
+        return alert_id
 
     async def flush(self, *, ignore_schedule: bool = True, max_messages: int = 10_000) -> int:
-        n = 0
-        while n < max_messages and await self.send_one(ignore_schedule=ignore_schedule):
-            n += 1
-        return n
+        """Try every pending alert once (tests / simulation / shutdown)."""
+        attempted: set[int] = set()
+        while len(attempted) < max_messages:
+            aid = await self.send_one(ignore_schedule=ignore_schedule, skip=attempted)
+            if aid is None:
+                break
+            attempted.add(aid)
+        return len(attempted)
 
     async def run(self, stop: asyncio.Event) -> None:
         await self.recover()
         while not stop.is_set():
             try:
-                worked = await self.send_one()
+                worked = await self.send_one() is not None
             except Exception as exc:  # noqa: BLE001
                 if is_transient_db_error(exc):
                     log.error("Database unavailable for alert dispatch; retrying", error=type(exc).__name__)
