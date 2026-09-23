@@ -216,3 +216,21 @@ def test_followup_selection():
     assert select_followup([te], 20_000 * U, NOW + timedelta(minutes=10), S.ratio_fraction) is te
     assert select_followup([te], 40 * U, NOW + timedelta(minutes=10), S.ratio_fraction) is None  # 8x < 10x
     assert select_followup([te], 20_000 * U, NOW + timedelta(hours=2), S.ratio_fraction) is None  # window over
+
+
+def test_large_must_be_at_least_min_large_amount():
+    small = model([(5, 1_000), (5, 2_000), (10, 4_000)])  # 200x ratios, but larges < 5,000 USDT
+    assert small is None
+    ok = model([(5, 5_000), (5, 6_000), (10, 8_000)])
+    assert ok.qualifies_active
+    custom = Settings(_env_file=None, min_large_amount_usdt=1000)
+    assert analyze_history("S", "R", hist([(5, 1_000), (5, 2_000), (10, 4_000)]), NOW, custom).qualifies_active
+
+
+def test_followup_below_min_large_is_ignored():
+    class TE:
+        amount_raw, tx_timestamp, expires_at = 5 * U, NOW, NOW + timedelta(hours=1)
+
+    at = NOW + timedelta(minutes=5)
+    assert select_followup([TE()], 4_000 * U, at, S.ratio_fraction, S.min_large_raw) is None
+    assert select_followup([TE()], 5_000 * U, at, S.ratio_fraction, S.min_large_raw) is not None

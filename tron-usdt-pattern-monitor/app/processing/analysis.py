@@ -154,7 +154,10 @@ class AnalysisService:
         Runs silently (a single summary message is sent instead of per-pair alerts)."""
         async with self.sf() as s, s.begin():
             n = await repo.flag_backfill_candidates(
-                s, min_transfers=2 * self.s.candidate_min_sequences, ratio=self.s.ratio_fraction
+                s,
+                min_transfers=2 * self.s.candidate_min_sequences,
+                ratio=self.s.ratio_fraction,
+                min_large_raw=self.s.min_large_raw,
             )
         log.info("Historical analysis started", candidate_pairs=n)
         done = 0

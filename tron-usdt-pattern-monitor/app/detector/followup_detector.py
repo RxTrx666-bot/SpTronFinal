@@ -22,13 +22,15 @@ class PendingTest(Protocol):
     expires_at: datetime
 
 
-def is_large_followup(test_amount_raw: int, amount_raw: int, ratio: Fraction) -> bool:
-    return is_substantially_larger(amount_raw, test_amount_raw, ratio)
+def is_large_followup(test_amount_raw: int, amount_raw: int, ratio: Fraction, min_large_raw: int = 0) -> bool:
+    return amount_raw >= min_large_raw and is_substantially_larger(amount_raw, test_amount_raw, ratio)
 
 
-def select_followup(pending: Sequence[PendingTest], amount_raw: int, at: datetime, ratio: Fraction):
+def select_followup(
+    pending: Sequence[PendingTest], amount_raw: int, at: datetime, ratio: Fraction, min_large_raw: int = 0
+):
     """Return the most recent pending test this transfer completes, or None."""
     for te in sorted(pending, key=lambda t: t.tx_timestamp, reverse=True):
-        if te.tx_timestamp <= at <= te.expires_at and is_large_followup(te.amount_raw, amount_raw, ratio):
+        if te.tx_timestamp <= at <= te.expires_at and is_large_followup(te.amount_raw, amount_raw, ratio, min_large_raw):
             return te
     return None
