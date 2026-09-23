@@ -99,7 +99,9 @@ class WatchlistManager:
             entry.confidence_score = 0.0
 
         entry.status = new_status.value
-        if new_status == WatchlistStatus.ACTIVE and old_status != WatchlistStatus.ACTIVE.value:
+        # PAUSED -> ACTIVE is a resume, not a new activation (no repeat announcement).
+        resumed = old_status == WatchlistStatus.PAUSED.value
+        if new_status == WatchlistStatus.ACTIVE and old_status != WatchlistStatus.ACTIVE.value and not resumed:
             entry.activated_at = now
             entry.activation_count = (entry.activation_count or 0) + 1
         if new_status != WatchlistStatus.PAUSED and old_status == WatchlistStatus.PAUSED.value:
@@ -127,7 +129,7 @@ class WatchlistManager:
                 reason=entry.status_reason,
             )
 
-        if not silent:
+        if not silent and not resumed:
             await self._notify(session, snap, created=created, old_status=old_status, now=now)
         return snap
 
