@@ -284,7 +284,7 @@ async def run_simulation(database_url: str = "sqlite+aiosqlite:///:memory:", use
             print("--telegram requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
             return 2
         tg = TelegramClient(s.telegram_bot_token)
-        extra = CompositeSink(ConsoleSink(), TelegramSink(tg, s.telegram_chat_id))
+        extra = CompositeSink(ConsoleSink(), TelegramSink(tg, s.telegram_chat_ids))
     failures = await part1_and_2(database_url, extra)
     failures += await part3(database_url, extra)
     if tg:

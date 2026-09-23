@@ -243,9 +243,12 @@ TronGrid-compatible event server, and point `TRON_API_URL` at it.
   ```
 - **Group.** Add the bot to the group and send a message there. Group IDs are
   negative, for example `-1001234567890`.
-- Put the number in `TELEGRAM_CHAT_ID`.
+- Put the number in `TELEGRAM_CHAT_ID`. For several recipients, separate the IDs with
+  commas, for example `TELEGRAM_CHAT_ID=8020903132,8972433273`. Every alert goes to each
+  chat, and each of them can use the commands. Every person must open the bot and press
+  **Start** once, or Telegram won't let the bot message them.
 
-The bot answers commands **only** in this chat. Commands:
+The bot answers commands **only** in the chats listed there. Commands:
 - `/start`, `/help`
 - `/status`
 - `/watchlist [page]`

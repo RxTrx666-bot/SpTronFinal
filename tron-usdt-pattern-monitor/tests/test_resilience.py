@@ -187,3 +187,30 @@ async def test_backfill_resumes_after_interruption(make_harness):
     h.app.collector.process = orig
     await h.app.collector.run_backfill(h.app.stop_event, h.app.on_backfill_complete)
     assert stored_first < 3 and await h.tx_count() == 3
+
+
+async def test_multiple_chat_ids_each_get_every_alert_once():
+    from app.telegram.alerts import SendError
+
+    sent: list[str] = []
+    fail_once = {"222"}
+
+    def handler(request):
+        import json as _json
+
+        chat = str(_json.loads(request.content)["chat_id"])
+        if chat in fail_once:
+            fail_once.discard(chat)
+            return httpx.Response(502, json={"ok": False, "description": "bad gateway"})
+        sent.append(chat)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": len(sent)}})
+
+    s = make_settings("sqlite+aiosqlite://", telegram_bot_token="T", telegram_chat_id=" 111, 222 ,111")
+    assert s.telegram_chat_ids == ["111", "222"]
+    client = TelegramClient("T", transport=httpx.MockTransport(handler))
+    sink = TelegramSink(client, s.telegram_chat_ids)
+    with pytest.raises(SendError):
+        await sink.send("alert")          # 111 ok, 222 fails
+    await sink.send("alert")              # retry: only 222 is sent
+    assert sent == ["111", "222"]
+    await client.close()
