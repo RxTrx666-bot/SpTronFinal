@@ -273,10 +273,10 @@ def build_model(
     window = int(min(window, max_followup_s))
 
     # ---- learned test band used for live matching (relative) ----------------
-    margin = _fraction(settings.test_match_margin)
-    low = math.floor(Fraction(test_min) * (1 - margin)) if margin < 1 else 0
+    factor = _fraction(settings.test_match_factor)
+    low = math.ceil(Fraction(test_min) / factor)
     low = max(low, settings.dust_floor_raw, 1)
-    high = math.floor(Fraction(test_max) * (1 + margin))
+    high = math.floor(Fraction(test_max) * factor)
     high = min(high, math.floor(Fraction(large_min) / ratio))
 
     # ---- success rate & relationship consistency ----------------------------
