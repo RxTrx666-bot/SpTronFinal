@@ -1,0 +1,19 @@
+# Alternative: let systemd manage the Docker Compose stack.
+#   sudo cp systemd/tron-usdt-monitor-docker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tron-usdt-monitor-docker
+[Unit]
+Description=TRON USDT pattern monitor (Docker Compose stack)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/tron-usdt-pattern-monitor
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

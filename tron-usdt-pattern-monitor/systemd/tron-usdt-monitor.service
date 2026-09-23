@@ -1,0 +1,30 @@
+# Native (virtualenv) deployment.  Install:
+#   sudo cp systemd/tron-usdt-monitor.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tron-usdt-monitor
+# Assumes the project is in /opt/tron-usdt-pattern-monitor with a venv in .venv
+# and secrets in /opt/tron-usdt-pattern-monitor/.env (chmod 600).
+[Unit]
+Description=TRON USDT TRC-20 test-transfer pattern monitor (read-only)
+Wants=network-online.target
+After=network-online.target postgresql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=tronmon
+Group=tronmon
+WorkingDirectory=/opt/tron-usdt-pattern-monitor
+EnvironmentFile=/opt/tron-usdt-pattern-monitor/.env
+ExecStart=/opt/tron-usdt-pattern-monitor/.venv/bin/python -m app.main run
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
