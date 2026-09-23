@@ -90,9 +90,11 @@ class Settings(BaseSettings):
     # the relationship's own learned test centre are treated as the same test
     # behaviour.  This is RELATIVE to each relationship, never absolute.
     test_cluster_band_factor: float = 3.0
-    # How far outside the learned [min, max] test range a new transfer may be
-    # and still match the learned behaviour (0.5 => 50 % below min / above max).
-    test_match_margin: float = 0.5
+    # How far outside the relationship's learned [min, max] test range a new
+    # transfer may be and still match (2.0 => from min/2 up to max*2).  Relative
+    # to each relationship; the upper bound is also capped at
+    # (smallest learned large) / MIN_LARGE_TO_TEST_RATIO.
+    test_match_factor: float = Field(2.0, ge=1.0)
     # Pure noise floor for zero-ish dust (address-poisoning style transfers).
     # This is NOT a test-amount range; it only discards sub-cent noise.
     dust_floor_usdt: Decimal = Decimal("0.01")
