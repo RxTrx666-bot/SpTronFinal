@@ -1,0 +1,53 @@
+# /etc/systemd/system/tron-funding-bot.service
+# Runs independently of any SSH session; restarts automatically on failure.
+[Unit]
+Description=TRON Wallet Funding Bot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fundbot
+Group=fundbot
+WorkingDirectory=/opt/tron-funding-bot
+# Non-secret configuration
+EnvironmentFile=/etc/tron-funding-bot/config.env
+# Secrets are passed as systemd credentials (readable only by this service)
+LoadCredential=mother_private_key:/etc/tron-funding-bot/secrets/mother_private_key
+LoadCredential=internal_api_key:/etc/tron-funding-bot/secrets/internal_api_key
+LoadCredential=admin_api_key:/etc/tron-funding-bot/secrets/admin_api_key
+LoadCredential=telegram_bot_token:/etc/tron-funding-bot/secrets/telegram_bot_token
+LoadCredential=tron_api_key:/etc/tron-funding-bot/secrets/tron_api_key
+Environment=MOTHER_PRIVATE_KEY_FILE=%d/mother_private_key
+Environment=INTERNAL_API_KEY_FILE=%d/internal_api_key
+Environment=ADMIN_API_KEY_FILE=%d/admin_api_key
+Environment=TELEGRAM_BOT_TOKEN_FILE=%d/telegram_bot_token
+Environment=TRON_API_KEY_FILE=%d/tron_api_key
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/tron-funding-bot/src/index.js
+Restart=always
+RestartSec=5
+# Exit code 78 = invalid configuration: do not restart-loop on it
+RestartPreventExitStatus=78
+TimeoutStopSec=45
+KillSignal=SIGTERM
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/tron-funding-bot /var/log/tron-funding-bot
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

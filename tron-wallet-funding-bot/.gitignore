@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+logs/
+*.log
+secrets/
+*.key
+*.pem
+coverage/

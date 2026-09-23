@@ -1,0 +1,15 @@
+# /etc/logrotate.d/tron-funding-bot  (only needed when LOG_FILE is set;
+# with systemd, stdout goes to journald which rotates on its own)
+/var/log/tron-funding-bot/*.log {
+    daily
+    rotate 30
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # the bot appends with O_APPEND and reopens per write, so copytruncate is safe
+    copytruncate
+    create 0640 fundbot fundbot
+    su fundbot fundbot
+}
