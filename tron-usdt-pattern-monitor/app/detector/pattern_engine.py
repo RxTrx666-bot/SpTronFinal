@@ -395,3 +395,10 @@ def analyze_history(
         dust_floor_raw=settings.dust_floor_raw,
     )
     return build_model(sender, recipient, history, seqs, now, settings)
+
+
+def _ratio_to_decimal(fr: Fraction):
+    """Exact-ish decimal (6 places) for storing a ratio in NUMERIC columns."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    return (Decimal(fr.numerator) / Decimal(fr.denominator)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
