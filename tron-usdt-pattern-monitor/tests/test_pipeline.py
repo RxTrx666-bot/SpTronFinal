@@ -330,3 +330,47 @@ async def test_telegram_commands(make_harness):
     h.clock.advance(minutes=5)
     h.ev("A", "B", 6, h.clock.now())
     assert kinds(await h.poll()) == ["TEST"]
+
+
+def assert_telegram_html(text: str) -> None:
+    """Telegram accepts only a few tags and rejects unbalanced markup."""
+    from html.parser import HTMLParser
+
+    allowed = {"b", "i", "u", "s", "code", "pre", "a", "blockquote"}
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+
+        def handle_starttag(self, tag, attrs):
+            assert tag in allowed, f"tag <{tag}> not allowed by Telegram"
+            self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            assert self.stack and self.stack.pop() == tag, f"unbalanced </{tag}>"
+
+    p = P()
+    p.feed(text)
+    p.close()
+    assert not p.stack, f"unclosed tags {p.stack}"
+    assert len(text) <= 4096
+
+
+async def test_all_messages_are_valid_telegram_html(make_harness):
+    h = await make_harness()
+    for amount, minutes in ((5, 1), (20_000, 20), (5, 600), (30_000, 20), (7, 600), (40_000, 20), (5, 600), (25_000, 15)):
+        h.clock.advance(minutes=minutes)
+        h.ev("A", "B", amount, h.clock.now())
+        await h.poll()
+    assert set(kinds(h.rec.messages)) >= {"NEW_PATTERN", "ACTIVATED", "TEST", "FOLLOWUP"}
+    c = h.app.commands
+    replies = [
+        await c.handle(cmd)
+        for cmd in ("/help", "/status", "/watchlist", "/stats", f"/pattern {addr('A')} {addr('B')}", "/pattern x", "/nope")
+    ]
+    await h.app.send_system("x", h.app.formatter.startup_message(entries=1, min_seq=3, ratio="10", min_conf="HIGH"))
+    await h.app.send_system("y", h.app.formatter.backfill_summary(days=7, analysed=5, snaps=h.app.cache.values()))
+    await h.app.dispatcher.flush()
+    for text in h.rec.messages + replies:
+        assert_telegram_html(text)

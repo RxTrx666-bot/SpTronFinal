@@ -31,7 +31,7 @@ from app.database import repository as repo
 from app.domain import WatchlistStatus, ms_to_datetime
 from app.logging_setup import get_logger
 from app.telegram.alerts import SendError
-from app.telegram.messages import MessageFormatter, humanize_seconds
+from app.telegram.messages import DIVIDER, STATUS_ICON, MessageFormatter, confidence_bar, humanize_seconds
 from app.watchlist.model import WatchlistSnapshot
 
 log = get_logger(__name__)
@@ -90,6 +90,23 @@ class TelegramClient:
 
     async def get_me(self) -> dict:
         return await self.call("getMe", {})
+
+    async def set_commands(self) -> None:
+        """Show the command menu (the "/" button) in Telegram."""
+        await self.call(
+            "setMyCommands",
+            {
+                "commands": [
+                    {"command": "status", "description": "📡 Monitor health"},
+                    {"command": "watchlist", "description": "🔴 Automatic watchlist"},
+                    {"command": "stats", "description": "📊 Statistics & latency"},
+                    {"command": "pattern", "description": "🔎 Learned model: /pattern <sender> <recipient>"},
+                    {"command": "pause", "description": "⏸ Mute a pair: /pause <sender> <recipient>"},
+                    {"command": "resume", "description": "▶️ Unmute a pair: /resume <sender> <recipient>"},
+                    {"command": "help", "description": "ℹ️ What this bot does"},
+                ]
+            },
+        )
 
 
 class TelegramSink:
@@ -156,22 +173,26 @@ class CommandHandler:
         }
         fn = handlers.get(cmd)
         if fn is None:
-            return "Unknown command. Try /help"
+            return "🤔 Unknown command. Try /help"
         return await fn(args)
 
     async def help(self, _args) -> str:
         return (
-            "🛰 <b>TRON USDT Test-Transfer Pattern Monitor</b> (read-only)\n\n"
-            "I watch every USDT TRC-20 transfer on TRON, learn TEST → LARGE behaviour "
-            "for each Sender → Recipient relationship and build the watchlist automatically. "
-            "When a watched sender repeats its learned test transfer you get a 🔴 RED alert "
+            "🛰 <b>TRON USDT Pattern Monitor</b>  <i>(read-only)</i>\n"
+            f"{DIVIDER}\n"
+            "I watch <b>every USDT TRC-20 transfer</b> on TRON and learn, for each "
+            "Sender → Recipient pair, when a small <b>test</b> transfer is followed by a "
+            "<b>large</b> one. Pairs that repeat it go on the watchlist automatically.\n\n"
+            "🔴 When a watched sender repeats its test, you get a RED alert "
             "<b>before</b> the large transfer.\n\n"
-            "/status – monitor health\n"
-            "/watchlist [page] – automatic watchlist\n"
-            "/stats – statistics &amp; latency\n"
-            "/pattern &lt;sender&gt; &lt;recipient&gt; – learned model\n"
-            "/pause &lt;sender&gt; &lt;recipient&gt; · /resume … – mute/unmute one relationship\n\n"
-            "No wallets need to be added manually."
+            "<blockquote>📋 <b>Commands</b>\n"
+            "📡 /status — monitor health\n"
+            "🔴 /watchlist — automatic watchlist\n"
+            "📊 /stats — statistics &amp; latency\n"
+            "🔎 /pattern &lt;sender&gt; &lt;recipient&gt; — learned model\n"
+            "⏸ /pause &lt;sender&gt; &lt;recipient&gt; — mute a pair\n"
+            "▶️ /resume &lt;sender&gt; &lt;recipient&gt; — unmute</blockquote>\n"
+            "✨ No wallets need to be added manually."
         )
 
     async def status(self, _args) -> str:
@@ -181,20 +202,41 @@ class CommandHandler:
         lag = (now_ms - cs.confirmed_cursor_ms) / 1000 if cs.confirmed_cursor_ms else None
         async with a.session_factory() as s:
             counts = await repo.watchlist_counts(s)
-        bf = "complete" if cs.backfill_done else (
-            f"running – at {ms_to_datetime(cs.backfill_next_ms):%Y-%m-%d %H:%M} UTC" if cs.backfill_next_ms else "running"
-        )
+        if cs.backfill_done:
+            bf = "✅ complete"
+        elif cs.backfill_next_ms and cs.backfill_end_ms:
+            start = cs.backfill_end_ms - a.settings.initial_history_days * 86_400_000
+            pct = max(0.0, min(1.0, (cs.backfill_next_ms - start) / max(1, cs.backfill_end_ms - start)))
+            bf = f"⏳ {confidence_bar(pct)} {pct:.0%} (at {ms_to_datetime(cs.backfill_next_ms):%m-%d %H:%M} UTC)"
+        else:
+            bf = "⏳ starting…"
+        if lag is None:
+            health = "⚪ starting"
+        elif lag < 120:
+            health = "🟢 live"
+        elif lag < 600:
+            health = "🟡 catching up"
+        else:
+            health = "🔴 behind"
+        errors = cs.api_errors + cs.db_errors
+        wl = "  ·  ".join(
+            f"{STATUS_ICON.get(k, '')} {k.title()} {v}" for k, v in sorted(counts.items())
+        ) or "📭 empty (patterns appear automatically)"
         return (
             "📡 <b>STATUS</b>\n"
-            f"Contract: <code>{a.settings.usdt_contract_address}</code>\n"
-            f"Confirmed stream lag: {humanize_seconds(lag) if lag is not None else 'n/a'}\n"
-            f"Unconfirmed stream: {'on' if a.settings.enable_unconfirmed else 'off'}\n"
-            f"Historical backfill: {bf}\n"
-            f"Transfers seen/stored: {a.stats.events_seen:,}/{a.stats.events_stored:,}\n"
-            f"Analysis backlog: {a.analysis.backlog}\n"
-            f"Watchlist: " + (", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "empty") + "\n"
-            f"Alerts sent/failed (this run): {a.dispatcher.sent}/{a.dispatcher.failed}\n"
-            f"API errors: {cs.api_errors} · DB errors: {cs.db_errors}"
+            f"{DIVIDER}\n"
+            f"💚 <b>Health:</b> {health}\n"
+            f"⛓ <b>Confirmed stream lag:</b> {humanize_seconds(lag) if lag is not None else 'n/a'}\n"
+            f"⚡ <b>Unconfirmed stream:</b> {'🟢 on' if a.settings.enable_unconfirmed else '⚪ off'}\n"
+            f"📚 <b>Historical backfill:</b> {bf}\n\n"
+            "<blockquote>📈 <b>This run</b>\n"
+            f"👁 Transfers seen: <b>{a.stats.events_seen:,}</b>\n"
+            f"💾 Transfers stored: <b>{a.stats.events_stored:,}</b>\n"
+            f"🧠 Analysis backlog: {a.analysis.backlog}\n"
+            f"📨 Alerts sent: {a.dispatcher.sent} · failed: {a.dispatcher.failed}</blockquote>\n"
+            f"🔴 <b>Watchlist:</b> {wl}\n"
+            f"{'✅' if errors == 0 else '⚠️'} <b>Errors:</b> API {cs.api_errors} · DB {cs.db_errors}\n"
+            f"📄 <code>{a.settings.usdt_contract_address}</code>"
         )
 
     async def watchlist(self, args) -> str:
@@ -218,14 +260,28 @@ class CommandHandler:
             counts = await repo.table_counts(s)
             by_type = await repo.alerts_by_type(s)
             lat = sorted(await repo.recent_latencies(s, "TEST_DETECTED"))
-        lines = ["📊 <b>STATS</b>"]
-        lines += [f"{k}: {v:,}" for k, v in counts.items()]
-        for t, d in sorted(by_type.items()):
-            lines.append(f"alerts {t}: " + ", ".join(f"{k} {v}" for k, v in d.items()))
+        icons = {
+            "transactions": "💸", "wallet_pairs": "🔗", "pattern_sequences": "🔁",
+            "test_events": "🧪", "followup_events": "💰", "alerts": "📨",
+        }
+        names = {
+            "TEST_DETECTED": "🔴 Test alerts", "LARGE_FOLLOWUP": "🚨 Follow-ups",
+            "WATCHLIST_ACTIVATED": "🟠 Activations", "NEW_PATTERN": "🟡 New patterns",
+            "TEST_CONFIRMED": "✅ Confirmations", "SYSTEM": "⚙️ System",
+        }
+        lines = ["📊 <b>STATISTICS</b>", DIVIDER, "<blockquote>🗄 <b>Database</b>"]
+        lines += [f"{icons.get(k, '•')} {k.replace('_', ' ')}: <b>{v:,}</b>" for k, v in counts.items()]
+        lines[-1] += "</blockquote>"
+        if by_type:
+            lines.append("<blockquote>📨 <b>Alerts</b>")
+            for t, d in sorted(by_type.items()):
+                lines.append(f"{names.get(t, t)}: " + " · ".join(f"{k.lower()} {v}" for k, v in d.items()))
+            lines[-1] += "</blockquote>"
         if lat:
             p = lambda q: lat[min(len(lat) - 1, int(q * len(lat)))] / 1000  # noqa: E731
             lines.append(
-                f"Test-alert latency (block time → Telegram delivered): p50 {p(0.5):.1f}s, p95 {p(0.95):.1f}s, n={len(lat)}"
+                f"⚡ <b>Test-alert latency</b> <i>(block → Telegram)</i>\n"
+                f"p50 <b>{p(0.5):.1f}s</b> · p95 <b>{p(0.95):.1f}s</b> · n={len(lat)}"
             )
         return "\n".join(lines)
 
@@ -237,17 +293,17 @@ class CommandHandler:
     async def pattern(self, args) -> str:
         pair = self._pair_args(args)
         if pair is None:
-            return "Usage: /pattern &lt;sender&gt; &lt;recipient&gt; (TRON base58 addresses)"
+            return "ℹ️ Usage: /pattern &lt;sender&gt; &lt;recipient&gt; <i>(TRON addresses starting with T)</i>"
         async with self.app.session_factory() as s:
             entry = await repo.get_watchlist(s, *pair)
             seqs = await repo.pair_sequences(s, *pair)
             wp = await repo.get_pair(s, *pair)
         if entry is None:
             if wp is None:
-                return "No USDT transfers recorded for this relationship."
+                return "📭 No USDT transfers recorded for this relationship."
             return (
-                "No TEST → LARGE pattern learned for this relationship yet.\n"
-                f"Transfers recorded: {wp.total_transfers}, sequences found: {len(seqs)}"
+                "🔎 No TEST → LARGE pattern learned for this relationship yet.\n"
+                f"💸 Transfers recorded: <b>{wp.total_transfers}</b> · 🔁 sequences found: <b>{len(seqs)}</b>"
             )
         extra = json.loads(entry.model_json) if entry.model_json else {}
         return self.fmt.pattern_detail(WatchlistSnapshot.from_entry(entry), extra, seqs)
@@ -255,25 +311,25 @@ class CommandHandler:
     async def pause(self, args) -> str:
         pair = self._pair_args(args)
         if pair is None:
-            return "Usage: /pause &lt;sender&gt; &lt;recipient&gt;"
+            return "ℹ️ Usage: /pause &lt;sender&gt; &lt;recipient&gt;"
         now = self.app.clock.now()
         async with self.app.session_factory() as s, s.begin():
             snap = await self.app.manager.pause(s, *pair, until=None, reason="paused by operator", now=now)
         if snap is None:
-            return "That relationship is not on the watchlist."
+            return "📭 That relationship is not on the watchlist."
         self.app.cache.put(snap)
-        return "⏸ Paused. Use /resume to re-enable."
+        return "⏸ <b>Paused.</b> Alerts for this pair are muted. Use /resume to re-enable."
 
     async def resume(self, args) -> str:
         pair = self._pair_args(args)
         if pair is None:
-            return "Usage: /resume &lt;sender&gt; &lt;recipient&gt;"
+            return "ℹ️ Usage: /resume &lt;sender&gt; &lt;recipient&gt;"
         async with self.app.session_factory() as s, s.begin():
             ok = await self.app.manager.resume(s, *pair, self.app.clock.now())
         if not ok:
-            return "That relationship is not on the watchlist."
+            return "📭 That relationship is not on the watchlist."
         snap = await self.app.analysis.analyze_pair(*pair)
-        return f"▶️ Resumed – status now {snap.status.value if snap else 'n/a'}."
+        return f"▶️ <b>Resumed</b> — status now {STATUS_ICON.get(snap.status.value, '') if snap else ''} {snap.status.value if snap else 'n/a'}."
 
 
 async def run_command_loop(
@@ -305,7 +361,7 @@ async def run_command_loop(
                 reply = await handler.handle(text)
             except Exception:  # noqa: BLE001
                 log.exception("Command failed", command=text[:40])
-                reply = "⚠️ Command failed; see logs."
+                reply = "⚠️ Command failed — see server logs."
             if reply:
                 try:
                     await client.send_message(chat, reply)

@@ -147,11 +147,18 @@ class Application:
         if self.settings.send_startup_message:
             await self.send_system(
                 f"STARTUP:{int(self.clock.now().timestamp())}",
-                f"🟢 <b>TRON USDT pattern monitor started</b>\nWatchlist entries: {len(self.cache)}\n"
-                f"Min sequences: {self.settings.min_successful_sequences}, "
-                f"min ratio: {self.settings.min_large_to_test_ratio}x, "
-                f"min confidence: {self.settings.min_pattern_confidence.value}",
+                self.formatter.startup_message(
+                    entries=len(self.cache),
+                    min_seq=self.settings.min_successful_sequences,
+                    ratio=str(self.settings.min_large_to_test_ratio),
+                    min_conf=self.settings.min_pattern_confidence.value,
+                ),
             )
+        if self.telegram:
+            try:
+                await self.telegram.set_commands()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Could not set Telegram command menu", error=str(exc)[:200])
         stop = self.stop_event
         tasks: list[tuple[str, Callable[[], Awaitable[None]]]] = [
             ("collector-confirmed", lambda: self.collector.run_confirmed(stop)),
