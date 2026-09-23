@@ -1,0 +1,58 @@
+# Production-style compose file.
+#  - secrets are mounted as files (never in `docker inspect` env)
+#  - the API is only published on the host's loopback; put Caddy/nginx in front
+#  - restart: unless-stopped keeps the bot running after SSH logout / reboot
+services:
+  fundbot:
+    build: .
+    image: tron-wallet-funding-bot:latest
+    restart: unless-stopped
+    env_file: .env # non-secret settings only; leave secret values empty there
+    environment:
+      MOTHER_PRIVATE_KEY_FILE: /run/secrets/mother_private_key
+      INTERNAL_API_KEY_FILE: /run/secrets/internal_api_key
+      ADMIN_API_KEY_FILE: /run/secrets/admin_api_key
+      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
+      TRON_API_KEY_FILE: /run/secrets/tron_api_key
+      API_HOST: 0.0.0.0 # inside the container; only published on 127.0.0.1 below
+      ALLOW_INSECURE_HTTP: "true" # TLS is terminated by the reverse proxy
+      TRUST_PROXY: "true"
+      DATABASE_URL: sqlite:/app/data/funding.db
+    secrets:
+      - mother_private_key
+      - internal_api_key
+      - admin_api_key
+      - telegram_bot_token
+      - tron_api_key
+    volumes:
+      - fundbot-data:/app/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+secrets:
+  # Create these files with chmod 600 and owner uid 1000 (the container's
+  # `node` user): see docs/DEPLOYMENT.md.
+  mother_private_key:
+    file: ./secrets/mother_private_key
+  internal_api_key:
+    file: ./secrets/internal_api_key
+  admin_api_key:
+    file: ./secrets/admin_api_key
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token
+  tron_api_key:
+    file: ./secrets/tron_api_key
+
+volumes:
+  fundbot-data:

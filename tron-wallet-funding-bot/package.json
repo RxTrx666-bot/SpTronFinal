@@ -1,0 +1,30 @@
+{
+  "name": "tron-wallet-funding-bot",
+  "version": "1.0.0",
+  "description": "Production-oriented TRON mainnet wallet funding service: funds target addresses with TRX and USDT (TRC-20) from a Mother Wallet, with local signing, idempotency, a DB-backed queue, Telegram alerts and an admin API.",
+  "type": "module",
+  "main": "src/index.js",
+  "private": true,
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "migrate": "node scripts/migrate.js",
+    "check": "node scripts/check.js",
+    "healthcheck": "node scripts/healthcheck.js",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
+    "lint": "node --check src/index.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.5",
+    "knex": "^3.3.0",
+    "tronweb": "^6.5.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.0"
+  }
+}
