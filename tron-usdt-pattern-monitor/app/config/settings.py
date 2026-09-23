@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------ Telegram
     telegram_bot_token: str = ""
+    # One chat ID, or several separated by commas (e.g. "8020903132,8972433273").
+    # Every alert is delivered to each chat; each chat may use the bot commands.
     telegram_chat_id: str = ""
     telegram_commands_enabled: bool = True
     telegram_timeout_seconds: float = 15.0
@@ -172,8 +174,13 @@ class Settings(BaseSettings):
         return self.usdt_contract_address == OFFICIAL_USDT_TRC20_CONTRACT
 
     @property
+    def telegram_chat_ids(self) -> list[str]:
+        ids = [c.strip() for c in self.telegram_chat_id.replace(";", ",").split(",")]
+        return list(dict.fromkeys(c for c in ids if c))
+
+    @property
     def telegram_enabled(self) -> bool:
-        return bool(self.telegram_bot_token and self.telegram_chat_id)
+        return bool(self.telegram_bot_token and self.telegram_chat_ids)
 
 
 @lru_cache(maxsize=1)

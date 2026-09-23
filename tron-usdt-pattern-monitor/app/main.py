@@ -56,7 +56,7 @@ class Application:
         if sink is None:
             if settings.telegram_enabled:
                 self.telegram = TelegramClient(settings.telegram_bot_token, settings.telegram_timeout_seconds)
-                sink = TelegramSink(self.telegram, settings.telegram_chat_id)
+                sink = TelegramSink(self.telegram, settings.telegram_chat_ids)
             else:
                 log.warning("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set - alerts are printed to stdout")
                 sink = ConsoleSink()
@@ -165,7 +165,7 @@ class Application:
             tasks.append((f"analysis-{i}", lambda: self.analysis.run_worker(stop)))
         if self.telegram and self.settings.telegram_commands_enabled:
             tasks.append(
-                ("telegram-commands", lambda: run_command_loop(self.telegram, self.settings.telegram_chat_id, self.commands, stop))
+                ("telegram-commands", lambda: run_command_loop(self.telegram, self.settings.telegram_chat_ids, self.commands, stop))
             )
         running = [asyncio.create_task(supervise(name, fn, stop), name=name) for name, fn in tasks]
         await stop.wait()
@@ -232,8 +232,13 @@ async def _check(settings: Settings) -> int:
         try:
             me = await app.telegram.get_me()
             print(f"✔ Telegram bot @{me.get('username')}")
-            await app.telegram.send_message(settings.telegram_chat_id, "✅ TRON USDT monitor: configuration check OK")
-            print(f"✔ test message sent to chat {settings.telegram_chat_id}")
+            for chat in settings.telegram_chat_ids:
+                try:
+                    await app.telegram.send_message(chat, "✅ TRON USDT monitor: configuration check OK")
+                    print(f"✔ test message sent to chat {chat}")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"✘ Telegram chat {chat}: {exc}  (has this account pressed Start on the bot?)")
+                    ok = False
         except Exception as exc:  # noqa: BLE001
             print(f"✘ Telegram: {exc}")
             ok = False

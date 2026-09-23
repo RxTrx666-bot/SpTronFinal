@@ -1,6 +1,6 @@
 """Telegram Bot API client and read-only command handler.
 
-Commands (only answered in the configured TELEGRAM_CHAT_ID):
+Commands (only answered in the chats listed in TELEGRAM_CHAT_ID):
   /start /help               - introduction
   /status                    - collector health, cursor lag, queues
   /watchlist [page]          - the automatic watchlist (paginated)
@@ -16,9 +16,11 @@ automatically from on-chain behaviour.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
@@ -91,12 +93,42 @@ class TelegramClient:
 
 
 class TelegramSink:
-    def __init__(self, client: TelegramClient, chat_id: str) -> None:
+    """Delivers each alert to every configured chat.
+
+    If some chats succeed and another fails, the dispatcher retries the alert;
+    chats that already received it are remembered and skipped, so a retry
+    never sends a duplicate to them.
+    """
+
+    def __init__(self, client: TelegramClient, chat_ids: str | list[str]) -> None:
         self.client = client
-        self.chat_id = chat_id
+        self.chat_ids = [chat_ids] if isinstance(chat_ids, str) else list(chat_ids)
+        self._delivered: OrderedDict[str, dict[str, str]] = OrderedDict()
 
     async def send(self, text: str) -> str | None:
-        return await self.client.send_message(self.chat_id, text)
+        key = hashlib.sha256(text.encode()).hexdigest()
+        done = self._delivered.setdefault(key, {})
+        self._delivered.move_to_end(key)
+        while len(self._delivered) > 2000:
+            self._delivered.popitem(last=False)
+        errors: list[str] = []
+        last_exc: SendError | None = None
+        for chat in self.chat_ids:
+            if chat in done:
+                continue
+            try:
+                done[chat] = await self.client.send_message(chat, text)
+            except SendError as exc:
+                errors.append(f"chat {chat}: {exc}")
+                last_exc = exc
+        if errors:
+            raise SendError(
+                "; ".join(errors),
+                retryable=True,
+                retry_after=last_exc.retry_after if last_exc else None,
+            )
+        self._delivered.pop(key, None)
+        return ",".join(done[c] for c in self.chat_ids if c in done) or None
 
 
 class CommandHandler:
@@ -244,7 +276,10 @@ class CommandHandler:
         return f"▶️ Resumed – status now {snap.status.value if snap else 'n/a'}."
 
 
-async def run_command_loop(client: TelegramClient, chat_id: str, handler: CommandHandler, stop: asyncio.Event) -> None:
+async def run_command_loop(
+    client: TelegramClient, chat_ids: str | list[str], handler: CommandHandler, stop: asyncio.Event
+) -> None:
+    allowed = {str(c) for c in ([chat_ids] if isinstance(chat_ids, str) else chat_ids)}
     offset: int | None = None
     delay = 1.0
     while not stop.is_set():
@@ -264,8 +299,8 @@ async def run_command_loop(client: TelegramClient, chat_id: str, handler: Comman
             msg = upd.get("message") or {}
             chat = str((msg.get("chat") or {}).get("id", ""))
             text = msg.get("text") or ""
-            if chat != str(chat_id) or not text.startswith("/"):
-                continue  # only the configured chat may query the bot
+            if chat not in allowed or not text.startswith("/"):
+                continue  # only the configured chats may query the bot
             try:
                 reply = await handler.handle(text)
             except Exception:  # noqa: BLE001
@@ -273,6 +308,6 @@ async def run_command_loop(client: TelegramClient, chat_id: str, handler: Comman
                 reply = "⚠️ Command failed; see logs."
             if reply:
                 try:
-                    await client.send_message(chat_id, reply)
+                    await client.send_message(chat, reply)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("Failed to send command reply", error=str(exc)[:200])
