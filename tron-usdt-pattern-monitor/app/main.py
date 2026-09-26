@@ -144,7 +144,7 @@ class Application:
     async def run_forever(self) -> None:
         await self.start()
         await self.verify_token_contract()
-        if self.settings.send_startup_message:
+        if self.settings.send_startup_message and self.settings.notification_mode == "all":
             await self.send_system(
                 f"STARTUP:{int(self.clock.now().timestamp())}",
                 self.formatter.startup_message(

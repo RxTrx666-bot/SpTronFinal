@@ -176,8 +176,9 @@ class MessageFormatter:
 
     def activated_alert(self, snap: WatchlistSnapshot) -> str:
         return (
-            "🟠 <b>AUTOMATIC WATCHLIST ACTIVATED</b>\n"
-            "<i>Its next test-like transfer will trigger a 🔴 RED alert</i>\n"
+            "✅ <b>NEW WATCHLIST ENTRY</b>\n"
+            "🟢 <b>AUTOMATIC WATCHLIST ACTIVATED</b>\n"
+            "<i>This sender repeatedly sends a test transfer, then a large transfer, to this recipient</i>\n"
             f"{DIVIDER}\n" + self._pattern_block(snap)
         )
 

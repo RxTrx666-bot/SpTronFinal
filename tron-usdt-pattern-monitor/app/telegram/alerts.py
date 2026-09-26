@@ -111,6 +111,9 @@ class AlertDispatcher:
             alert = await repo.next_due_alert(s, _utcnow(), ignore_schedule=ignore_schedule, skip=skip)
             if alert is None:
                 return None
+            if alert.alert_type in self.s.muted_alert_types:
+                alert.status = AlertStatus.SUPPRESSED.value  # kept for history, not sent
+                return alert.id
             alert.status = AlertStatus.SENDING.value
             alert.attempts += 1
             alert_id, text, attempts = alert.id, alert.message_text, alert.attempts

@@ -374,3 +374,19 @@ async def test_all_messages_are_valid_telegram_html(make_harness):
     await h.app.dispatcher.flush()
     for text in h.rec.messages + replies:
         assert_telegram_html(text)
+
+
+async def test_watchlist_mode_sends_only_the_final_result(make_harness):
+    h = await make_harness(notification_mode="watchlist")
+    for amount, minutes in ((5, 1), (20_000, 20), (5, 600), (30_000, 20), (7, 600), (40_000, 20), (5, 600), (25_000, 15)):
+        h.clock.advance(minutes=minutes)
+        h.ev("A", "B", amount, h.clock.now())
+        await h.poll()
+    # the pattern was found, activated, a test was detected and a follow-up happened ...
+    types = {a.alert_type: a.status for a in await h.alerts()}
+    assert types["TEST_DETECTED"] == "SUPPRESSED" and types["LARGE_FOLLOWUP"] == "SUPPRESSED"
+    assert types["NEW_PATTERN"] == "SUPPRESSED"
+    # ... but the only Telegram message is the watchlist entry
+    assert kinds(h.rec.messages) == ["ACTIVATED"]
+    assert "NEW WATCHLIST ENTRY" in h.rec.messages[0]
+    assert (await h.entry("A", "B")).successful_sequences == 4  # learning continued silently

@@ -100,6 +100,7 @@ def _settings(database_url: str, **kw) -> Settings:
         initial_history_days=10,
         backfill_window_seconds=3600,
         send_startup_message=False,
+        notification_mode="all",
         enable_unconfirmed=True,
         telegram_bot_token="",
         telegram_chat_id="",
