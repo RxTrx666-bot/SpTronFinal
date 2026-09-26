@@ -29,6 +29,7 @@ def make_settings(db_url: str, **kw) -> Settings:
         initial_history_days=0,
         backfill_window_seconds=21600,
         send_startup_message=False,
+        notification_mode="all",
         telegram_bot_token="",
         telegram_chat_id="",
         heartbeat_file="/tmp/tron-usdt-test.heartbeat",

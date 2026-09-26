@@ -66,6 +66,7 @@ class AlertStatus(str, Enum):
     SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+    SUPPRESSED = "SUPPRESSED"  # muted by NOTIFICATION_MODE
 
 
 def ms_to_datetime(ms: int) -> datetime:

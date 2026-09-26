@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     flood_max_tests_per_hour: int = 6
     flood_pause_minutes: int = 60
     notify_new_patterns: bool = True
+    # "watchlist": only send the final result - a message when a relationship is
+    #              added to the watchlist (plus the backfill summary). Test,
+    #              follow-up and new-pattern alerts are still detected and stored,
+    #              but not sent.
+    # "all":       send every alert type.
+    notification_mode: str = "watchlist"
 
     # --------------------------------------------------------- Maintenance
     analysis_workers: int = 2
@@ -146,6 +152,14 @@ class Settings(BaseSettings):
     @classmethod
     def _upper_conf(cls, value):
         return value.upper() if isinstance(value, str) else value
+
+    @field_validator("notification_mode", mode="before")
+    @classmethod
+    def _mode(cls, value):
+        value = str(value).strip().lower()
+        if value not in ("watchlist", "all"):
+            raise ValueError("NOTIFICATION_MODE must be 'watchlist' or 'all'")
+        return value
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -184,6 +198,12 @@ class Settings(BaseSettings):
     def telegram_chat_ids(self) -> list[str]:
         ids = [c.strip() for c in self.telegram_chat_id.replace(";", ",").split(",")]
         return list(dict.fromkeys(c for c in ids if c))
+
+    @property
+    def muted_alert_types(self) -> set[str]:
+        if self.notification_mode == "all":
+            return set()
+        return {"TEST_DETECTED", "LARGE_FOLLOWUP", "NEW_PATTERN", "TEST_CONFIRMED"}
 
     @property
     def telegram_enabled(self) -> bool:
