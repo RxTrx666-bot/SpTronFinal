@@ -162,75 +162,93 @@ class AlertDispatcher:
         if tracker is None or await tracker.already_notified(cycle) or await tracker.cycle() != cycle:
             return False
         text = formatting.build_limit_message(await tracker.count(), tracker.threshold)
-        if await self._send_with_retry(text, stop, label=f"limit_notice_cycle_{cycle}"):
+        if await self._broadcast(text, stop, label=f"limit_notice_cycle_{cycle}"):
             await tracker.mark_notified(cycle)
             log.info("tx_limit_notice_sent", extra=kv(cycle=cycle))
             return True
         return False
 
-    async def _send_with_retry(self, text: str, stop: asyncio.Event, label: str) -> bool:
+    async def _broadcast(self, text: str, stop: asyncio.Event, label: str) -> bool:
+        """Send ``text`` to every admin chat, retrying until delivered.
+
+        A chat that fails permanently (e.g. the person never pressed Start, or blocked
+        the bot) is skipped once at least one other chat has received the message, so
+        one unreachable chat never holds up alerts for the others. If *no* chat can be
+        reached, keep retrying: the message is never silently dropped.
+        Returns False only when shutting down before delivery.
+        """
+        pending = list(self.settings.telegram_admin_chat_ids)
+        delivered = 0
+        parse_mode: str | None = "HTML"
         backoff = 1.0
-        while not stop.is_set():
-            try:
-                await self.client.send_message(self.settings.telegram_admin_chat_id, text)
-                return True
-            except TelegramApiError as exc:
-                delay = exc.retry_after if exc.retry_after is not None else backoff
-                log.warning("telegram_send_failed", extra=kv(item=label, error=str(exc), retry_in_s=round(delay, 1)))
+        while pending and not stop.is_set():
+            retry: list[int] = []
+            permanent: list[tuple[int, TelegramApiError]] = []
+            delay = 0.0
+            for chat_id in pending:
+                try:
+                    await self.client.send_message(chat_id, text, parse_mode=parse_mode)
+                    delivered += 1
+                except TelegramApiError as exc:
+                    self.stats.alert_failures += 1
+                    if "can't parse entities" in exc.description and parse_mode:
+                        log.warning("telegram_html_rejected_retrying_plain", extra=kv(item=label))
+                        parse_mode = None
+                        retry.append(chat_id)
+                    elif exc.retryable:
+                        retry.append(chat_id)
+                        delay = max(delay, exc.retry_after if exc.retry_after is not None else backoff)
+                    else:
+                        permanent.append((chat_id, exc))
+            for chat_id, exc in permanent:
+                if delivered:
+                    log.error("telegram_chat_unreachable_skipped",
+                              extra=kv(item=label, chat_id=chat_id, error=str(exc),
+                                       hint="that person must open the bot and press Start"))
+                else:
+                    retry.append(chat_id)
+                    delay = max(delay, backoff)
+            pending = retry
+            if pending:
+                log.warning("telegram_send_failed",
+                            extra=kv(item=label, chats=len(pending), retry_in_s=round(delay, 1)))
                 await self._sleep(delay + random.uniform(0, 0.25))
                 backoff = min(backoff * 2, self.max_backoff)
-        return False
+        return not pending
 
     async def _deliver(self, tx_hash: str, stop: asyncio.Event) -> bool:
         tx = await self.repo.get_transaction(tx_hash)
         if tx is None or tx.alert_status == "sent":
             return False
-        text = formatting.build_alert_message(tx, self.settings)
         if self.settings.wallet_created_notice:
             # "Wallet created" goes first, then the transaction alert.
-            if not await self._send_with_retry(formatting.build_wallet_created_message(tx), stop,
-                                               label=f"wallet_created_{tx_hash[:12]}"):
+            if not await self._broadcast(formatting.build_wallet_created_message(tx), stop,
+                                         label=f"wallet_created_{tx_hash[:12]}"):
                 return False
             log.info("wallet_created_notice_sent", extra=kv(tx_hash=tx_hash))
-        backoff = 1.0
-        parse_mode: str | None = "HTML"
-        while not stop.is_set():
-            try:
-                await self.client.send_message(self.settings.telegram_admin_chat_id, text, parse_mode=parse_mode)
-                sent_ms = now_ms()
-                await self.repo.mark_alert_sent(tx_hash, sent_ms)
-                self.stats.alerts_sent += 1
-                alert_latency = sent_ms - tx.block_timestamp_ms
-                if not tx.is_backfill:
-                    self.stats.last_alert_latency_ms = alert_latency
-                log.info(
-                    "telegram_alert_sent",
-                    extra=kv(
-                        tx_hash=tx_hash,
-                        block_time=format_utc(tx.block_timestamp_ms, with_millis=True),
-                        detected=format_utc(tx.detected_at_ms, with_millis=True),
-                        alerted=format_utc(sent_ms, with_millis=True),
-                        detection_latency_s=f"{(tx.detected_at_ms - tx.block_timestamp_ms) / 1000:.3f}",
-                        alert_latency_s=f"{alert_latency / 1000:.3f}",
-                        telegram_send_s=f"{(sent_ms - tx.detected_at_ms) / 1000:.3f}",
-                    ),
-                )
-                return True
-            except TelegramApiError as exc:
-                self.stats.alert_failures += 1
-                await self.repo.increment_alert_attempts(tx_hash)
-                if "can't parse entities" in exc.description and parse_mode:
-                    log.warning("telegram_html_rejected_retrying_plain", extra=kv(tx_hash=tx_hash))
-                    parse_mode = None
-                    continue
-                delay = exc.retry_after if exc.retry_after is not None else backoff
-                log.warning(
-                    "telegram_alert_failed",
-                    extra=kv(tx_hash=tx_hash, error=str(exc), retryable=exc.retryable, retry_in_s=round(delay, 1)),
-                )
-                await self._sleep(delay + random.uniform(0, 0.25))
-                backoff = min(backoff * 2, self.max_backoff)
-        return False
+        text = formatting.build_alert_message(tx, self.settings)
+        if not await self._broadcast(text, stop, label=f"alert_{tx_hash[:12]}"):
+            return False
+        sent_ms = now_ms()
+        await self.repo.mark_alert_sent(tx_hash, sent_ms)
+        self.stats.alerts_sent += 1
+        alert_latency = sent_ms - tx.block_timestamp_ms
+        if not tx.is_backfill:
+            self.stats.last_alert_latency_ms = alert_latency
+        log.info(
+            "telegram_alert_sent",
+            extra=kv(
+                tx_hash=tx_hash,
+                chats=len(self.settings.telegram_admin_chat_ids),
+                block_time=format_utc(tx.block_timestamp_ms, with_millis=True),
+                detected=format_utc(tx.detected_at_ms, with_millis=True),
+                alerted=format_utc(sent_ms, with_millis=True),
+                detection_latency_s=f"{(tx.detected_at_ms - tx.block_timestamp_ms) / 1000:.3f}",
+                alert_latency_s=f"{alert_latency / 1000:.3f}",
+                telegram_send_s=f"{(sent_ms - tx.detected_at_ms) / 1000:.3f}",
+            ),
+        )
+        return True
 
 
 class TelegramBot:
@@ -253,7 +271,7 @@ class TelegramBot:
 
     def is_authorized(self, chat_id: Any) -> bool:
         try:
-            return int(chat_id) == self.settings.telegram_admin_chat_id
+            return int(chat_id) in self.settings.telegram_admin_chat_ids
         except (TypeError, ValueError):
             return False
 
@@ -268,10 +286,12 @@ class TelegramBot:
                 log.warning("telegram_setup_call_failed", extra=kv(method=method, error=str(exc)))
 
     async def notify_admin(self, text: str) -> None:
-        try:
-            await self.client.send_message(self.settings.telegram_admin_chat_id, text)
-        except TelegramApiError as exc:
-            log.warning("telegram_notify_failed", extra=kv(error=str(exc)))
+        """Best-effort message to every admin chat (startup notices)."""
+        for chat_id in self.settings.telegram_admin_chat_ids:
+            try:
+                await self.client.send_message(chat_id, text)
+            except TelegramApiError as exc:
+                log.warning("telegram_notify_failed", extra=kv(chat_id=chat_id, error=str(exc)))
 
     async def run(self, stop: asyncio.Event) -> None:
         await self.setup()

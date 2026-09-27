@@ -76,7 +76,7 @@ class Settings:
     tron_max_retries: int
     # Telegram
     telegram_bot_token: str
-    telegram_admin_chat_id: int
+    telegram_admin_chat_ids: tuple[int, ...]
     # What to monitor
     wallet_address: str
     usdt_contract: str
@@ -120,6 +120,11 @@ class Settings:
     @property
     def max_usdt(self) -> str:
         return format_token_amount(self.max_raw, self.token_decimals)
+
+    @property
+    def telegram_admin_chat_id(self) -> int:
+        """First admin chat (kept for backwards compatibility)."""
+        return self.telegram_admin_chat_ids[0]
 
     @property
     def outgoing_only(self) -> bool:
@@ -170,11 +175,20 @@ class Settings:
         if min_raw > max_raw:
             raise ConfigError("MIN_USDT must be <= MAX_USDT")
 
-        chat_id_raw = e.str("TELEGRAM_ADMIN_CHAT_ID", required=True)
-        try:
-            chat_id = int(chat_id_raw)
-        except ValueError as exc:
-            raise ConfigError("TELEGRAM_ADMIN_CHAT_ID must be an integer chat id") from exc
+        # One or more chat ids, comma-separated: every id receives all alerts and may use commands.
+        chat_ids: list[int] = []
+        for part in e.str("TELEGRAM_ADMIN_CHAT_ID", required=True).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                chat_id = int(part)
+            except ValueError as exc:
+                raise ConfigError("TELEGRAM_ADMIN_CHAT_ID must be integer chat id(s), comma-separated") from exc
+            if chat_id not in chat_ids:
+                chat_ids.append(chat_id)
+        if not chat_ids:
+            raise ConfigError("TELEGRAM_ADMIN_CHAT_ID is required")
 
         directions: set[Direction] = set()
         for part in e.str("ALERT_DIRECTIONS", "OUTGOING").upper().replace(" ", "").split(","):
@@ -207,7 +221,7 @@ class Settings:
             tron_request_timeout=e.float("TRON_REQUEST_TIMEOUT", 10.0, 1.0),
             tron_max_retries=e.int("TRON_MAX_RETRIES", 4, 0),
             telegram_bot_token=e.str("TELEGRAM_BOT_TOKEN", required=True),
-            telegram_admin_chat_id=chat_id,
+            telegram_admin_chat_ids=tuple(chat_ids),
             wallet_address=wallet,
             usdt_contract=contract,
             token_symbol="USDT",
