@@ -1,0 +1,17 @@
+services:
+  tron-usdt-monitor:
+    build: .
+    image: tron-usdt-monitor:latest
+    container_name: tron-usdt-monitor
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/monitor.db
+      HEARTBEAT_FILE: /app/data/heartbeat
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

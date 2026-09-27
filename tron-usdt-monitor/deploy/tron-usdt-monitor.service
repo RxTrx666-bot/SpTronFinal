@@ -1,0 +1,25 @@
+# systemd unit for running WITHOUT Docker.
+# Install: see README "Option B: systemd".
+[Unit]
+Description=TRON USDT TRC-20 wallet monitor (Telegram alerts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tronmon
+Group=tronmon
+WorkingDirectory=/opt/tron-usdt-monitor
+EnvironmentFile=/opt/tron-usdt-monitor/.env
+ExecStart=/opt/tron-usdt-monitor/.venv/bin/python -m app.main
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tron-usdt-monitor/data
+
+[Install]
+WantedBy=multi-user.target
