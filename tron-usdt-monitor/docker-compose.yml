@@ -9,9 +9,14 @@ services:
       DATABASE_URL: sqlite:////app/data/monitor.db
       HEARTBEAT_FILE: /app/data/heartbeat
     volumes:
-      - ./data:/app/data
+      # Docker-managed volume: owned by the container's non-root user automatically,
+      # survives restarts, rebuilds and `docker compose down` (not `down -v`).
+      - monitor-data:/app/data
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
+
+volumes:
+  monitor-data:

@@ -224,7 +224,9 @@ docker compose restart
 git pull                     # or upload the new files
 docker compose up -d --build
 ```
-Stop: `docker compose down`. The database in `./data/` is kept.
+Stop: `docker compose down`. The database lives in the Docker volume `monitor-data` and is kept
+(only `docker compose down -v` deletes it). Back it up with
+`docker compose cp tron-usdt-monitor:/app/data/monitor.db ./monitor-backup.db`.
 The container runs as a non-root user, restarts automatically (`restart: unless-stopped`, which also
 covers VPS reboots once Docker is enabled with `systemctl enable docker`), and rotates its logs.
 
