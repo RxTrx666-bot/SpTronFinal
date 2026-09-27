@@ -187,8 +187,9 @@ def test_alert_dispatcher_retries_until_delivered_and_marks_sent():
         dispatcher = AlertDispatcher(settings, telegram(handler), repo, stats, sleep=sleeper)
         assert await dispatcher.load_pending() == 1
         await dispatcher.drain()
-        assert len(sent) == 1 and sent[0]["chat_id"] == 1001
-        assert "tronscan.org/#/transaction/" + tx_hash(1) in sent[0]["text"]
+        assert len(sent) == 2 and all(m["chat_id"] == 1001 for m in sent)
+        assert "WALLET CREATED" in sent[0]["text"]  # wallet-created first, then the alert
+        assert "tronscan.org/#/transaction/" + tx_hash(1) in sent[1]["text"]
         assert (await repo.get_transaction(tx_hash(1))).alert_status == "sent"
         assert 2.0 <= sleeper.delays[1] <= 2.25  # honoured retry_after
         # a restarted dispatcher finds nothing pending -> no duplicate alert

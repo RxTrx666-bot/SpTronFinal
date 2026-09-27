@@ -58,7 +58,7 @@ def test_notice_sent_once_at_80th_transaction_right_after_its_alert():
         _, repo, dispatcher, tracker, processor, rec, _ = await setup()
         await send_outgoing(processor, 1, 79)
         await dispatcher.drain()
-        assert len(rec.texts) == 79 and not any(is_limit_notice(t) for t in rec.texts)
+        assert len(rec.texts) == 2 * 79 and not any(is_limit_notice(t) for t in rec.texts)
 
         await send_outgoing(processor, 80, 1)  # the 80th
         await dispatcher.drain()
@@ -67,7 +67,7 @@ def test_notice_sent_once_at_80th_transaction_right_after_its_alert():
 
         await send_outgoing(processor, 81, 5)  # alerts continue, no repeated notice
         await dispatcher.drain()
-        assert len(rec.texts) == 86
+        assert len(rec.texts) == 2 * 85 + 1  # (wallet created + alert) x 85 + one notice
         assert sum(is_limit_notice(t) for t in rec.texts) == 1
     run(go())
 

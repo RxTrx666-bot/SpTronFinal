@@ -86,6 +86,7 @@ class Settings:
     max_raw: int
     alert_directions: frozenset[Direction]
     tx_limit_threshold: int
+    wallet_created_notice: bool
     # Monitoring behaviour
     monitor_mode: str
     poll_interval_seconds: float
@@ -163,7 +164,7 @@ class Settings:
         decimals = USDT_DECIMALS
         try:
             min_raw = parse_token_amount(e.str("MIN_USDT", "1.000000"), decimals)
-            max_raw = parse_token_amount(e.str("MAX_USDT", "1.200000"), decimals)
+            max_raw = parse_token_amount(e.str("MAX_USDT", "1.000100"), decimals)
         except ValueError as exc:
             raise ConfigError(f"MIN_USDT/MAX_USDT: {exc}") from exc
         if min_raw > max_raw:
@@ -215,6 +216,7 @@ class Settings:
             max_raw=max_raw,
             alert_directions=frozenset(directions),
             tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 80, 0),
+            wallet_created_notice=e.bool("WALLET_CREATED_NOTICE", True),
             monitor_mode=mode,
             poll_interval_seconds=e.float("POLL_INTERVAL_SECONDS", 2.0, 0.2),
             confirmed_only=e.bool("CONFIRMED_ONLY", False),

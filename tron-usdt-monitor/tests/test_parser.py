@@ -21,10 +21,10 @@ def test_address_roundtrip_known_values():
 
 
 def test_parse_trongrid_incoming_record():
-    t = parse_trongrid_trc20_record(trongrid_record(1, sender=OTHER, recipient=WALLET, value="1050000"))
+    t = parse_trongrid_trc20_record(trongrid_record(1, sender=OTHER, recipient=WALLET, value="1000050"))
     assert t.tx_hash == tx_hash(1)
     assert t.sender == OTHER and t.recipient == WALLET
-    assert t.amount_raw == 1_050_000
+    assert t.amount_raw == 1_000_050
     assert t.contract_address == USDT and t.token_symbol == "USDT" and t.token_decimals == 6
     assert t.block_timestamp_ms == BLOCK_TS
 
@@ -63,10 +63,10 @@ def test_malformed_non_dict():
 
 
 def test_decode_transfer_event_log():
-    info = tx_info(4, [transfer_log(WALLET, OTHER, 1_200_000)], block=71_234_567)
+    info = tx_info(4, [transfer_log(WALLET, OTHER, 1_000_100)], block=71_234_567)
     [t] = parse_transfer_logs(info)
     assert t.sender == WALLET and t.recipient == OTHER
-    assert t.amount_raw == 1_200_000
+    assert t.amount_raw == 1_000_100
     assert t.contract_address == USDT
     assert t.block_number == 71_234_567
     assert t.block_timestamp_ms == BLOCK_TS  # blockchain time, not detection time
@@ -74,8 +74,8 @@ def test_decode_transfer_event_log():
 
 
 def test_multiple_logs_and_contract_prefilter():
-    info = tx_info(5, [transfer_log(OTHER, WALLET, 1_100_000, contract=FAKE_USDT),
-                       transfer_log(OTHER, WALLET, 1_100_000)])
+    info = tx_info(5, [transfer_log(OTHER, WALLET, 1_000_087, contract=FAKE_USDT),
+                       transfer_log(OTHER, WALLET, 1_000_087)])
     all_transfers = parse_transfer_logs(info)
     assert {t.contract_address for t in all_transfers} == {USDT, FAKE_USDT}
     only_usdt = parse_transfer_logs(info, contract=USDT)
@@ -83,7 +83,7 @@ def test_multiple_logs_and_contract_prefilter():
 
 
 def test_wallet_prefilter():
-    info = tx_info(6, [transfer_log(OTHER, hex_to_base58("41" + "44" * 20), 1_100_000)])
+    info = tx_info(6, [transfer_log(OTHER, hex_to_base58("41" + "44" * 20), 1_000_087)])
     assert parse_transfer_logs(info, contract=USDT, wallet=WALLET) == []
 
 
@@ -92,12 +92,12 @@ def test_trx_transfer_yields_nothing():
 
 
 def test_failed_transaction_yields_nothing():
-    info = tx_info(8, [transfer_log(OTHER, WALLET, 1_100_000)], result="REVERT")
+    info = tx_info(8, [transfer_log(OTHER, WALLET, 1_000_087)], result="REVERT")
     assert parse_transfer_logs(info) == []
 
 
 def test_non_transfer_event_ignored():
-    log = transfer_log(OTHER, WALLET, 1_100_000)
+    log = transfer_log(OTHER, WALLET, 1_000_087)
     log["topics"][0] = "8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"  # Approval
     assert parse_transfer_logs(tx_info(9, [log])) == []
 
@@ -109,7 +109,7 @@ def test_trc721_transfer_with_four_topics_ignored():
 
 
 def test_malformed_log_is_skipped_but_valid_log_kept():
-    bad = transfer_log(OTHER, WALLET, 1_100_000)
+    bad = transfer_log(OTHER, WALLET, 1_000_087)
     bad["data"] = "zz"
     good = transfer_log(WALLET, OTHER, 1_000_000)
     transfers = parse_transfer_logs(tx_info(11, [bad, good]))

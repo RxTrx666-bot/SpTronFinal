@@ -7,7 +7,7 @@ from tests.helpers import BLOCK_TS, make_processor, run, trongrid_record, tx_has
 
 def new_tx(n: int) -> NewTransaction:
     return NewTransaction(tx_hash=tx_hash(n), block_number=1, block_timestamp_ms=BLOCK_TS, direction="INCOMING",
-                          sender="a", recipient="b", amount_raw=1_100_000, amount_usdt="1.100000",
+                          sender="a", recipient="b", amount_raw=1_000_087, amount_usdt="1.000087",
                           contract_address="c", token_symbol="USDT", detected_at_ms=BLOCK_TS + 1000)
 
 
@@ -61,7 +61,7 @@ def test_duplicate_safe_after_restart(tmp_path):
         assert await processor.process(parse_trongrid_trc20_record(trongrid_record(3))) is False
         assert await repo.get_state("account.cursor_ms") == "123"
         stored = await repo.get_transaction(tx_hash(3))
-        assert stored.alert_status == "sent" and stored.amount_usdt == "1.100000"
+        assert stored.alert_status == "sent" and stored.amount_usdt == "1.000087"
         await repo.close()
         return alerts.queued
 

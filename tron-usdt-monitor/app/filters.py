@@ -22,7 +22,7 @@ class Direction(str, Enum):
 
 
 def parse_token_amount(value: str | int | Decimal, decimals: int = 6) -> int:
-    """Convert a human decimal amount (e.g. "1.2") to integer base units, exactly.
+    """Convert a human decimal amount (e.g. "1.0001") to integer base units, exactly.
 
     Raises ValueError for negative, non-finite, malformed values or values with
     more precision than the token supports.
@@ -42,7 +42,7 @@ def parse_token_amount(value: str | int | Decimal, decimals: int = 6) -> int:
 
 
 def format_token_amount(raw: int, decimals: int = 6) -> str:
-    """Format integer base units with exactly ``decimals`` places, e.g. 1100000 -> "1.100000"."""
+    """Format integer base units with exactly ``decimals`` places, e.g. 1000087 -> "1.000087"."""
     sign = "-" if raw < 0 else ""
     whole, frac = divmod(abs(int(raw)), 10**decimals)
     if decimals == 0:

@@ -73,22 +73,22 @@ def test_account_first_start_ignores_history_and_detects_new():
 
         # new incoming + outgoing matches, and noise
         tron.records += [
-            trongrid_record(2, sender=OTHER, recipient=WALLET, value="1050000", ts=BLOCK_TS + 3000),
-            trongrid_record(3, sender=WALLET, recipient=OTHER, value="1200000", ts=BLOCK_TS + 6000),
-            trongrid_record(4, value="1200001", ts=BLOCK_TS + 6000),                   # above range
+            trongrid_record(2, sender=OTHER, recipient=WALLET, value="1000050", ts=BLOCK_TS + 3000),
+            trongrid_record(3, sender=WALLET, recipient=OTHER, value="1000100", ts=BLOCK_TS + 6000),
+            trongrid_record(4, value="1000101", ts=BLOCK_TS + 6000),                   # above range
             trongrid_record(5, value="999999", ts=BLOCK_TS + 6000),                    # below range
             trongrid_record(6, contract=FAKE_USDT, ts=BLOCK_TS + 6000),                # fake USDT
             trongrid_record(7, type_="Approval", ts=BLOCK_TS + 6000),                  # not a transfer
         ]
-        for n, s, r, v in ((2, OTHER, WALLET, 1_050_000), (3, WALLET, OTHER, 1_200_000)):
+        for n, s, r, v in ((2, OTHER, WALLET, 1_000_050), (3, WALLET, OTHER, 1_000_100)):
             tron.infos[tx_hash(n)] = tx_info(n, [transfer_log(s, r, v)], block=70_000_001 + n,
                                              ts=BLOCK_TS + 3000 * (n - 1))
         await mon.poll_once()
         assert alerts.queued == [tx_hash(2), tx_hash(3)]
         incoming = await repo.get_transaction(tx_hash(2))
         outgoing = await repo.get_transaction(tx_hash(3))
-        assert incoming.direction == "INCOMING" and incoming.amount_usdt == "1.050000"
-        assert outgoing.direction == "OUTGOING" and outgoing.amount_usdt == "1.200000"
+        assert incoming.direction == "INCOMING" and incoming.amount_usdt == "1.000050"
+        assert outgoing.direction == "OUTGOING" and outgoing.amount_usdt == "1.000100"
         assert incoming.block_number == 70_000_003 and incoming.source == "event_log"
         assert incoming.block_timestamp_ms == BLOCK_TS + 3000  # exact chain timestamp
         # polling again (overlapping lookback window) never re-alerts
@@ -117,7 +117,7 @@ def test_account_verification_pending_then_success():
         tron.records.append(trongrid_record(9, ts=BLOCK_TS + 3000))
         await mon.poll_once()  # receipt not yet available
         assert alerts.queued == []
-        tron.infos[tx_hash(9)] = tx_info(9, [transfer_log(OTHER, WALLET, 1_100_000)])
+        tron.infos[tx_hash(9)] = tx_info(9, [transfer_log(OTHER, WALLET, 1_000_087)])
         await mon.poll_once()
         assert alerts.queued == [tx_hash(9)]
     run(go())
@@ -128,7 +128,7 @@ def test_account_failed_tx_not_alerted():
         mon, tron, repo, alerts = await account_monitor()
         await mon.initialize()
         tron.records.append(trongrid_record(10, ts=BLOCK_TS + 3000))
-        tron.infos[tx_hash(10)] = tx_info(10, [transfer_log(OTHER, WALLET, 1_100_000)], result="REVERT")
+        tron.infos[tx_hash(10)] = tx_info(10, [transfer_log(OTHER, WALLET, 1_000_087)], result="REVERT")
         await mon.poll_once()
         assert alerts.queued == []
     run(go())
@@ -198,13 +198,13 @@ def test_block_monitor_decodes_events():
         tron.head = (70_000_002, BLOCK_TS + 6000)
         tron.blocks[70_000_001] = [
             trx_transfer_info(30),                                                    # TRX transfer
-            tx_info(31, [transfer_log(OTHER, WALLET, 1_100_000, contract=FAKE_USDT)]),  # fake token
-            tx_info(32, [transfer_log(OTHER, THIRD, 1_100_000)]),                     # unrelated wallets
+            tx_info(31, [transfer_log(OTHER, WALLET, 1_000_087, contract=FAKE_USDT)]),  # fake token
+            tx_info(32, [transfer_log(OTHER, THIRD, 1_000_087)]),                     # unrelated wallets
             tx_info(33, [transfer_log(OTHER, WALLET, 1_000_000)], block=70_000_001, ts=BLOCK_TS + 3000),
             {"id": "broken"},                                                         # malformed
         ]
         tron.blocks[70_000_002] = [
-            tx_info(34, [transfer_log(WALLET, OTHER, 1_200_000)], block=70_000_002, ts=BLOCK_TS + 6000),
+            tx_info(34, [transfer_log(WALLET, OTHER, 1_000_100)], block=70_000_002, ts=BLOCK_TS + 6000),
             tx_info(35, [transfer_log(WALLET, OTHER, 2_000_000)], block=70_000_002),
         ]
         await mon.poll_once()
@@ -278,8 +278,8 @@ def test_outgoing_only_block_mode():
         await mon.initialize()
         tron.head = (70_000_001, BLOCK_TS + 3000)
         tron.blocks[70_000_001] = [
-            tx_info(55, [transfer_log(OTHER, WALLET, 1_100_000)]),
-            tx_info(56, [transfer_log(WALLET, OTHER, 1_100_000)]),
+            tx_info(55, [transfer_log(OTHER, WALLET, 1_000_087)]),
+            tx_info(56, [transfer_log(WALLET, OTHER, 1_000_087)]),
         ]
         await mon.poll_once()
         assert alerts.queued == [tx_hash(56)]

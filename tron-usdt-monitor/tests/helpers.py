@@ -44,7 +44,7 @@ def trongrid_record(
     n: int,
     sender: str = OTHER,
     recipient: str = WALLET,
-    value: str = "1100000",
+    value: str = "1000087",
     ts: int = BLOCK_TS,
     contract: str = USDT,
     symbol: str = "USDT",

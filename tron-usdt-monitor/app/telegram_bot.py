@@ -186,6 +186,12 @@ class AlertDispatcher:
         if tx is None or tx.alert_status == "sent":
             return False
         text = formatting.build_alert_message(tx, self.settings)
+        if self.settings.wallet_created_notice:
+            # "Wallet created" goes first, then the transaction alert.
+            if not await self._send_with_retry(formatting.build_wallet_created_message(tx), stop,
+                                               label=f"wallet_created_{tx_hash[:12]}"):
+                return False
+            log.info("wallet_created_notice_sent", extra=kv(tx_hash=tx_hash))
         backoff = 1.0
         parse_mode: str | None = "HTML"
         while not stop.is_set():

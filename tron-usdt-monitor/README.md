@@ -1,14 +1,14 @@
 # TRON USDT Monitor
 
 A Telegram bot that watches one TRON mainnet wallet and alerts you about **every USDT TRC-20
-transfer between 1.000000 and 1.200000 USDT (inclusive) that the wallet sends** (outgoing).
+transfer between 1.000000 and 1.000100 USDT (inclusive) that the wallet sends** (outgoing).
 It ignores everything else, including incoming transfers, unless you enable them with `ALERT_DIRECTIONS`.
 
 | | |
 |---|---|
 | Wallet | `TWkvffFDMsqbmTLkMHMABmw452Hyq98cdn` |
 | Token | USDT TRC-20, contract `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, 6 decimals |
-| Range | `1.000000` ≤ amount ≤ `1.200000` USDT, integer-exact |
+| Range | `1.000000` ≤ amount ≤ `1.000100` USDT (1,000,000 – 1,000,100 base units), integer-exact |
 | Directions | **OUTGOING only** by default (wallet → anyone, including wallet → itself). Set `ALERT_DIRECTIONS=OUTGOING,INCOMING` to also get incoming |
 | Alert time | Real block timestamp, the bot's detection time, and the latency between them |
 
@@ -27,7 +27,7 @@ It ignores everything else, including incoming transfers, unless you enable them
 ```
 TRON API ──► parser (strict validation) ──► filter ──► dedup (DB UNIQUE tx_hash) ──► Telegram
                                              │
-            contract == USDT, event == Transfer, wallet is the SENDER, 1.000000 ≤ amount ≤ 1.200000
+            contract == USDT, event == Transfer, wallet is the SENDER, 1.000000 ≤ amount ≤ 1.000100
 ```
 
 ### Mode `account` (default, for TronGrid)
@@ -65,12 +65,12 @@ Typical detection latency is about 2–6 s after the block timestamp.
 ### What is ignored
 Incoming transfers (default), TRX transfers (no TRC-20 event), TRC-10 tokens, other TRC-20 tokens (including fake tokens named
 "USDT" from other contracts), `Approval` and other events, TRC-721 transfers, failed/reverted
-transactions, USDT < 1.000000 or > 1.200000, and transfers not involving the wallet.
+transactions, USDT < 1.000000 or > 1.000100, and transfers not involving the wallet.
 
 ### Precision
 Amounts are integer base units (`1 USDT = 1_000_000`). `MIN_USDT`/`MAX_USDT` are parsed with
 `Decimal` and converted exactly. Floating point is never used for the range check.
-`1.200000` → match, `1.200001` → no match.
+`1.000100` → match, `1.000101` → no match, `1.000099` → match.
 
 ### Exact timestamps
 "Blockchain Time" is the timestamp of the block that contains the transaction (`block_timestamp`
@@ -91,6 +91,15 @@ Keep the VPS clock synced (`timedatectl set-ntp true`), or latency numbers will 
   Telegram is down, the alert retries with backoff until it goes through. After a crash, pending
   alerts are re-sent on the next start. Already-sent ones are never sent again.
 - Everything lives in `data/monitor.db`, so dedup survives restarts and reboots.
+
+### Wallet-created message
+Right before each transaction alert, the bot sends:
+```
+🆕 WALLET CREATED
+
+<receiver wallet address>
+```
+Then the 🚨 transaction alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
 ### 80-transaction limit notice
 Every matching transaction (live, not backfill) is counted. When the count reaches
@@ -281,7 +290,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 102 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 106 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later
