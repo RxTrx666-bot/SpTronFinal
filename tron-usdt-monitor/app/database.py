@@ -95,6 +95,13 @@ class Repository(abc.ABC):
     async def latest_transaction(self) -> StoredTransaction | None: ...
 
     @abc.abstractmethod
+    async def count_live_transactions_after(self, after_id: int) -> int:
+        """Non-backfill transactions with id > after_id."""
+
+    @abc.abstractmethod
+    async def max_transaction_id(self) -> int: ...
+
+    @abc.abstractmethod
     async def get_state(self, key: str) -> str | None: ...
 
     @abc.abstractmethod
@@ -258,6 +265,20 @@ class SQLiteRepository(Repository):
             ).fetchone()
 
         return _row_to_tx(await self._run(q))
+
+    async def count_live_transactions_after(self, after_id: int) -> int:
+        def q(c: sqlite3.Connection) -> int:
+            return int(c.execute(
+                "SELECT COUNT(*) FROM transactions WHERE id > ? AND is_backfill = 0", (after_id,)
+            ).fetchone()[0])
+
+        return await self._run(q)
+
+    async def max_transaction_id(self) -> int:
+        def q(c: sqlite3.Connection) -> int:
+            return int(c.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0])
+
+        return await self._run(q)
 
     async def get_state(self, key: str) -> str | None:
         def q(c: sqlite3.Connection):

@@ -92,6 +92,20 @@ Keep the VPS clock synced (`timedatectl set-ntp true`), or latency numbers will 
   alerts are re-sent on the next start. Already-sent ones are never sent again.
 - Everything lives in `data/monitor.db`, so dedup survives restarts and reboots.
 
+### 80-transaction limit notice
+Every matching transaction (live, not backfill) is counted. When the count reaches
+`TX_LIMIT_THRESHOLD` (default **80**), the bot sends, once, right after the 80th alert:
+```
+Balance negative 🚨
+Fill resources
+Run again
+```
+Transaction alerts keep coming after that, so nothing is missed. After refilling, send **`/reset`**:
+the counter goes back to 0/80, and the notice fires again at the next 80. `/status` shows the
+counter (`🔢 37/80`). The count and the "already notified" flag are stored in the database, so a
+restart neither loses the count nor repeats the notice. If the bot crashes before the notice is
+delivered, it is sent on the next start.
+
 ### Historical transactions
 With `BACKFILL_ENABLED=false` (default), the first start records the current chain time or block as
 the monitoring point, and only newer transfers alert. With `BACKFILL_ENABLED=true`, the first start
@@ -120,6 +134,7 @@ Only `TELEGRAM_ADMIN_CHAT_ID` can use commands or receive alerts. Other chats ge
 | `/start` | Intro |
 | `/status` | Online/degraded status, wallet, network, contract, range, detected count, last tx checked, last match, API latency, detection latency, uptime |
 | `/wallet` | Monitored wallet, network, token, range, monitoring state |
+| `/reset` | Restarts the 80-transaction counter at 0 (send it after refilling) |
 | `/help` | Command list |
 
 ---
@@ -262,10 +277,11 @@ app/
   database.py          Repository interface + SQLite implementation
   telegram_bot.py      Telegram client, alert dispatcher, admin-only commands
   formatting.py        alert / status / wallet messages
+  tx_limit.py          80-transaction counter + "Balance negative" notice
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 94 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 102 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later
