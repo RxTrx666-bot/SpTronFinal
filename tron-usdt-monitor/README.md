@@ -1,14 +1,15 @@
 # TRON USDT Monitor
 
 A Telegram bot that watches one TRON mainnet wallet and alerts you about **every USDT TRC-20
-transfer between 1.000000 and 1.200000 USDT (inclusive), incoming or outgoing**. It ignores everything else.
+transfer between 1.000000 and 1.200000 USDT (inclusive) that the wallet sends** (outgoing).
+It ignores everything else, including incoming transfers, unless you enable them with `ALERT_DIRECTIONS`.
 
 | | |
 |---|---|
 | Wallet | `TWkvffFDMsqbmTLkMHMABmw452Hyq98cdn` |
 | Token | USDT TRC-20, contract `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, 6 decimals |
 | Range | `1.000000` ≤ amount ≤ `1.200000` USDT, integer-exact |
-| Directions | INCOMING, OUTGOING (and SELF, wallet → wallet) |
+| Directions | **OUTGOING only** by default (wallet → anyone, including wallet → itself). Set `ALERT_DIRECTIONS=OUTGOING,INCOMING` to also get incoming |
 | Alert time | Real block timestamp, the bot's detection time, and the latency between them |
 
 > ⚠️ **About the contract address.** The spec named `TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7` as
@@ -26,14 +27,15 @@ transfer between 1.000000 and 1.200000 USDT (inclusive), incoming or outgoing**.
 ```
 TRON API ──► parser (strict validation) ──► filter ──► dedup (DB UNIQUE tx_hash) ──► Telegram
                                              │
-            contract == USDT, event == Transfer, wallet is from/to, 1.000000 ≤ amount ≤ 1.200000
+            contract == USDT, event == Transfer, wallet is the SENDER, 1.000000 ≤ amount ≤ 1.200000
 ```
 
 ### Mode `account` (default, for TronGrid)
 1. Every `POLL_INTERVAL_SECONDS` (default 2s) the bot calls
    `GET /v1/accounts/{wallet}/transactions/trc20?contract_address=TR7NH…&min_timestamp=…`.
-   This is TronGrid's index of TRC-20 `Transfer` events that involve the wallet in either
-   direction, filtered by the API to the USDT contract. Unconfirmed-but-in-block
+   This is TronGrid's index of TRC-20 `Transfer` events of the wallet, filtered by the API to the
+   USDT contract. With outgoing-only it also sends `only_from=true`, so TronGrid returns only
+   transfers the wallet sent. The bot's own filter rejects incoming transfers too, as a second guard. Unconfirmed-but-in-block
    transfers are included, so detection is as fast as possible.
 2. Each record is strictly validated (tx id, Base58Check addresses, integer `value`, timestamp).
    The filter then checks contract, symbol, decimals, event type, direction (the wallet must be the sender) and the amount range.
@@ -61,7 +63,7 @@ A TRON block is produced every 3 s, so a 2 s poll catches a transfer within one 
 Typical detection latency is about 2–6 s after the block timestamp.
 
 ### What is ignored
-TRX transfers (no TRC-20 event), TRC-10 tokens, other TRC-20 tokens (including fake tokens named
+Incoming transfers (default), TRX transfers (no TRC-20 event), TRC-10 tokens, other TRC-20 tokens (including fake tokens named
 "USDT" from other contracts), `Approval` and other events, TRC-721 transfers, failed/reverted
 transactions, USDT < 1.000000 or > 1.200000, and transfers not involving the wallet.
 
