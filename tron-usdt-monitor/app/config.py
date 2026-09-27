@@ -8,7 +8,7 @@ from typing import Mapping
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.filters import format_token_amount, parse_token_amount
+from app.filters import Direction, format_token_amount, parse_token_amount
 from app.tron_address import is_valid_address
 
 OFFICIAL_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
@@ -84,6 +84,7 @@ class Settings:
     token_decimals: int
     min_raw: int
     max_raw: int
+    alert_directions: frozenset[Direction]
     # Monitoring behaviour
     monitor_mode: str
     poll_interval_seconds: float
@@ -117,6 +118,18 @@ class Settings:
     @property
     def max_usdt(self) -> str:
         return format_token_amount(self.max_raw, self.token_decimals)
+
+    @property
+    def outgoing_only(self) -> bool:
+        return Direction.INCOMING not in self.alert_directions
+
+    @property
+    def directions_label(self) -> str:
+        if self.outgoing_only:
+            return "OUTGOING only 📤"
+        if Direction.OUTGOING not in self.alert_directions:
+            return "INCOMING only 📥"
+        return "INCOMING 📥 + OUTGOING 📤"
 
     @property
     def tron_api_host(self) -> str:
@@ -161,6 +174,12 @@ class Settings:
         except ValueError as exc:
             raise ConfigError("TELEGRAM_ADMIN_CHAT_ID must be an integer chat id") from exc
 
+        directions: set[Direction] = set()
+        for part in e.str("ALERT_DIRECTIONS", "OUTGOING").upper().replace(" ", "").split(","):
+            if part not in ("INCOMING", "OUTGOING"):
+                raise ConfigError("ALERT_DIRECTIONS must be OUTGOING, INCOMING or OUTGOING,INCOMING")
+            directions.add(Direction(part))
+
         mode = e.str("MONITOR_MODE", "account").lower()
         if mode not in MONITOR_MODES:
             raise ConfigError(f"MONITOR_MODE must be one of {MONITOR_MODES}")
@@ -193,6 +212,7 @@ class Settings:
             token_decimals=decimals,
             min_raw=min_raw,
             max_raw=max_raw,
+            alert_directions=frozenset(directions),
             monitor_mode=mode,
             poll_interval_seconds=e.float("POLL_INTERVAL_SECONDS", 2.0, 0.2),
             confirmed_only=e.bool("CONFIRMED_ONLY", False),

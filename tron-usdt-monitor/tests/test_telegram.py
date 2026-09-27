@@ -86,6 +86,7 @@ def test_admin_commands():
         wallet = await bot.handle_update(update(1001, "/wallet"))
         assert "👛 <b>MONITORED WALLET</b>" in wallet and WALLET in wallet
         assert "1.000000 – 1.200000 USDT" in wallet and "🟢 ACTIVE" in wallet
+        assert "Direction:\nINCOMING 📥 + OUTGOING 📤" in wallet
         status = await bot.handle_update(update(1001, "/status@MyBot"))
         assert "Status: 🟢 ONLINE" in status and "TRON Mainnet" in status
         assert "Transactions Detected:\n1 total" in status and "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
@@ -104,3 +105,9 @@ def test_status_degraded_when_polls_stale():
     text = build_status_message(settings, stats, 0, None, None, None, 0)
     assert "DEGRADED" in text and "Consecutive API errors: 1" in text
     assert "NOT ACTIVE" in build_wallet_message(settings, stats)
+
+
+def test_wallet_message_shows_outgoing_only():
+    settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
+    text = build_wallet_message(settings, MonitorStats())
+    assert "Direction:\nOUTGOING only 📤" in text

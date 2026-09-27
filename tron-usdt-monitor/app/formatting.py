@@ -78,6 +78,9 @@ def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
             "Amount Range:",
             f"{settings.min_usdt} – {settings.max_usdt} USDT",
             "",
+            "Direction:",
+            settings.directions_label,
+            "",
             "Monitoring:",
             "🟢 ACTIVE" if active else "🔴 NOT ACTIVE (API unreachable, see /status)",
         ]
@@ -148,6 +151,9 @@ def build_status_message(
         "Range:",
         f"{settings.min_usdt} – {settings.max_usdt} USDT",
         "",
+        "Direction:",
+        settings.directions_label,
+        "",
         "Monitoring:",
         monitoring,
         "",
@@ -188,7 +194,7 @@ def build_help_message(settings: Settings) -> str:
             "ℹ️ <b>TRON USDT MONITOR</b>",
             "",
             f"Watches <code>{escape(settings.wallet_address)}</code> for USDT TRC-20 transfers "
-            f"between {settings.min_usdt} and {settings.max_usdt} USDT (inclusive), incoming and outgoing.",
+            f"between {settings.min_usdt} and {settings.max_usdt} USDT (inclusive). Direction: {settings.directions_label}.",
             "",
             "/status – monitoring status and latency",
             "/wallet – monitored wallet and filter",
@@ -209,6 +215,7 @@ def build_startup_notice(settings: Settings, warnings: list[str]) -> str:
         "",
         f"Wallet: <code>{escape(settings.wallet_address)}</code>",
         f"Range: {settings.min_usdt} – {settings.max_usdt} USDT",
+        f"Direction: {settings.directions_label}",
         f"Mode: {escape(settings.monitor_mode)}",
     ]
     lines += [f"⚠️ {escape(w)}" for w in warnings]

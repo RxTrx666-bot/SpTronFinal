@@ -274,6 +274,7 @@ class AccountMonitor(BaseMonitor):
                 limit=self.PAGE_LIMIT,
                 only_confirmed=self.settings.confirmed_only,
                 fingerprint=fingerprint,
+                only_from=self.settings.outgoing_only,
             )
             pages += 1
             for record in records:
@@ -453,6 +454,7 @@ async def run_backfill(
             limit=200,
             only_confirmed=True,
             fingerprint=fingerprint,
+            only_from=settings.outgoing_only,
         )
         pages += 1
         for record in records:
