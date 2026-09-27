@@ -85,6 +85,7 @@ class Settings:
     min_raw: int
     max_raw: int
     alert_directions: frozenset[Direction]
+    tx_limit_threshold: int
     # Monitoring behaviour
     monitor_mode: str
     poll_interval_seconds: float
@@ -213,6 +214,7 @@ class Settings:
             min_raw=min_raw,
             max_raw=max_raw,
             alert_directions=frozenset(directions),
+            tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 80, 0),
             monitor_mode=mode,
             poll_interval_seconds=e.float("POLL_INTERVAL_SECONDS", 2.0, 0.2),
             confirmed_only=e.bool("CONFIRMED_ONLY", False),

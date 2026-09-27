@@ -36,6 +36,7 @@ from app.transaction_parser import (
     parse_trongrid_trc20_record,
 )
 from app.tron_client import TronApiError, TronClient
+from app.tx_limit import TxLimitTracker
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +61,9 @@ class TransactionProcessor:
         alerts: AlertSink,
         stats: MonitorStats,
         clock: Callable[[], int] = now_ms,
+        limit_tracker: "TxLimitTracker | None" = None,
     ) -> None:
+        self.limit_tracker = limit_tracker
         self.settings = settings
         self.filter = transfer_filter
         self.repo = repo
@@ -122,6 +125,8 @@ class TransactionProcessor:
         if latency_ms < 0 and not backfill:
             log.warning("negative_latency_check_server_clock_ntp", extra=kv(latency_ms=latency_ms))
         await self.alerts.enqueue(transfer.tx_hash)
+        if self.limit_tracker is not None and not backfill:
+            await self.limit_tracker.check()
         return True
 
 

@@ -95,6 +95,7 @@ def build_status_message(
     api_last_ms: float | None,
     api_avg_ms: float | None,
     pending_alerts: int,
+    limit_count: int | None = None,
 ) -> str:
     healthy = stats.is_healthy(settings.poll_interval_seconds)
     if healthy:
@@ -171,6 +172,11 @@ def build_status_message(
         "",
         "Last Detection Latency:",
         detection,
+    ]
+    if settings.tx_limit_threshold and limit_count is not None:
+        icon = "🚨" if limit_count >= settings.tx_limit_threshold else "🔢"
+        lines += ["", "Transaction Counter:", f"{icon} {limit_count}/{settings.tx_limit_threshold}"]
+    lines += [
         "",
         f"Mode: {escape(settings.monitor_mode)} · poll {settings.poll_interval_seconds:g}s"
         f" · {'confirmed only' if settings.confirmed_only else 'fast (unconfirmed blocks)'}",
@@ -188,6 +194,18 @@ def build_status_message(
     return "\n".join(lines)
 
 
+def build_limit_message(count: int, threshold: int) -> str:
+    return "\n".join(
+        [
+            "Balance negative 🚨",
+            "Fill resources",
+            "Run again",
+            "",
+            f"<i>{count}/{threshold} transactions reached. Send /reset after refilling to start counting again.</i>",
+        ]
+    )
+
+
 def build_help_message(settings: Settings) -> str:
     return "\n".join(
         [
@@ -198,6 +216,7 @@ def build_help_message(settings: Settings) -> str:
             "",
             "/status – monitoring status and latency",
             "/wallet – monitored wallet and filter",
+            f"/reset – restart the {settings.tx_limit_threshold}-transaction counter (after refilling)",
             "/help – this message",
         ]
     )

@@ -23,6 +23,7 @@ from app.telegram_bot import AlertDispatcher, TelegramBot, TelegramClient
 from app.timeutil import now_ms
 from app.tron_client import TronClient
 from app.tron_monitor import TransactionProcessor, build_monitor
+from app.tx_limit import TxLimitTracker
 
 log = logging.getLogger("app")
 
@@ -76,7 +77,9 @@ async def run(settings: Settings) -> int:
     telegram = TelegramClient(settings.telegram_bot_token, api_base=settings.telegram_api_url)
     stats = MonitorStats()
     dispatcher = AlertDispatcher(settings, telegram, repo, stats)
-    bot = TelegramBot(settings, telegram, repo, stats, tron)
+    limit_tracker = TxLimitTracker(repo, settings.tx_limit_threshold, dispatcher)
+    dispatcher.limit_tracker = limit_tracker
+    bot = TelegramBot(settings, telegram, repo, stats, tron, limit_tracker)
     processor = TransactionProcessor(
         settings,
         TransferFilter(
@@ -91,6 +94,7 @@ async def run(settings: Settings) -> int:
         repo,
         dispatcher,
         stats,
+        limit_tracker=limit_tracker,
     )
     monitor = build_monitor(settings, tron, repo, processor, stats, heartbeat=make_heartbeat(settings.heartbeat_file))
 
@@ -108,6 +112,7 @@ async def run(settings: Settings) -> int:
             return 2
 
         await dispatcher.load_pending()
+        await limit_tracker.check()  # re-send the notice if a crash happened before delivery
         if settings.notify_on_startup:
             await bot.notify_admin(build_startup_notice(settings, stats.warnings))
 

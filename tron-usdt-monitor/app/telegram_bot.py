@@ -23,6 +23,9 @@ from app.logger import kv
 from app.stats import MonitorStats
 from app.timeutil import format_utc, now_ms
 from app.tron_client import TronClient
+from app.tx_limit import TxLimitTracker
+
+NOTICE_PREFIX = "notice:"
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ COMMANDS = [
     ("start", "Start / show intro"),
     ("status", "Monitoring status and latency"),
     ("wallet", "Monitored wallet and amount range"),
+    ("reset", "Restart the transaction counter (after refilling)"),
     ("help", "Help"),
 ]
 
@@ -109,6 +113,10 @@ class AlertDispatcher:
         self._queued: set[str] = set()
         self._sleep = sleep
         self.max_backoff = max_backoff
+        self.limit_tracker: TxLimitTracker | None = None
+
+    async def enqueue_notice(self, cycle: int) -> None:
+        await self.enqueue(f"{NOTICE_PREFIX}{cycle}")
 
     async def enqueue(self, tx_hash: str) -> None:
         if tx_hash in self._queued:
@@ -129,7 +137,7 @@ class AlertDispatcher:
         while not stop.is_set():
             tx_hash = await self._queue.get()
             try:
-                await self._deliver(tx_hash, stop)
+                await self._deliver_item(tx_hash, stop)
             finally:
                 self._queued.discard(tx_hash)
                 self.stats.alert_queue_size = self._queue.qsize()
@@ -140,9 +148,38 @@ class AlertDispatcher:
         while not self._queue.empty():
             tx_hash = self._queue.get_nowait()
             try:
-                await self._deliver(tx_hash, stop)
+                await self._deliver_item(tx_hash, stop)
             finally:
                 self._queued.discard(tx_hash)
+
+    async def _deliver_item(self, item: str, stop: asyncio.Event) -> bool:
+        if item.startswith(NOTICE_PREFIX):
+            return await self._deliver_notice(int(item[len(NOTICE_PREFIX):]), stop)
+        return await self._deliver(item, stop)
+
+    async def _deliver_notice(self, cycle: int, stop: asyncio.Event) -> bool:
+        tracker = self.limit_tracker
+        if tracker is None or await tracker.already_notified(cycle) or await tracker.cycle() != cycle:
+            return False
+        text = formatting.build_limit_message(await tracker.count(), tracker.threshold)
+        if await self._send_with_retry(text, stop, label=f"limit_notice_cycle_{cycle}"):
+            await tracker.mark_notified(cycle)
+            log.info("tx_limit_notice_sent", extra=kv(cycle=cycle))
+            return True
+        return False
+
+    async def _send_with_retry(self, text: str, stop: asyncio.Event, label: str) -> bool:
+        backoff = 1.0
+        while not stop.is_set():
+            try:
+                await self.client.send_message(self.settings.telegram_admin_chat_id, text)
+                return True
+            except TelegramApiError as exc:
+                delay = exc.retry_after if exc.retry_after is not None else backoff
+                log.warning("telegram_send_failed", extra=kv(item=label, error=str(exc), retry_in_s=round(delay, 1)))
+                await self._sleep(delay + random.uniform(0, 0.25))
+                backoff = min(backoff * 2, self.max_backoff)
+        return False
 
     async def _deliver(self, tx_hash: str, stop: asyncio.Event) -> bool:
         tx = await self.repo.get_transaction(tx_hash)
@@ -198,7 +235,9 @@ class TelegramBot:
         repo: Repository,
         stats: MonitorStats,
         tron: TronClient,
+        limit_tracker: TxLimitTracker | None = None,
     ) -> None:
+        self.limit_tracker = limit_tracker
         self.settings = settings
         self.client = client
         self.repo = repo
@@ -282,6 +321,15 @@ class TelegramBot:
             return formatting.build_help_message(self.settings)
         if command == "/wallet":
             return formatting.build_wallet_message(self.settings, self.stats)
+        if command == "/reset":
+            if self.limit_tracker is None or not self.limit_tracker.enabled:
+                return "Transaction counter is disabled (TX_LIMIT_THRESHOLD=0)."
+            cycle = await self.limit_tracker.reset()
+            return (
+                "🔄 <b>Counter reset</b>\n\n"
+                f"Transaction Counter: 🔢 0/{self.limit_tracker.threshold}\n"
+                f"Cycle #{cycle} started. Monitoring continues."
+            )
         if command == "/status":
             return formatting.build_status_message(
                 self.settings,
@@ -291,5 +339,6 @@ class TelegramBot:
                 api_last_ms=self.tron.stats.last_latency_ms,
                 api_avg_ms=self.tron.stats.avg_latency_ms,
                 pending_alerts=len(await self.repo.pending_alerts()),
+                limit_count=await self.limit_tracker.count() if self.limit_tracker else None,
             )
         return None
