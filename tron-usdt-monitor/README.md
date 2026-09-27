@@ -135,7 +135,9 @@ and runs only once.
    - For a group: add the bot to the group, send a message, and use the negative group id from `getUpdates`.
 4. Put both values in `.env` as `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_CHAT_ID`.
 
-Only `TELEGRAM_ADMIN_CHAT_ID` can use commands or receive alerts. Other chats get
+Several people can receive alerts: `TELEGRAM_ADMIN_CHAT_ID=111111111,222222222`. Each of them must press **Start**
+on the bot once. If one of them hasn't, the others still get every alert, and a log line says who to fix.
+Only the configured chat IDs can use commands or receive alerts. Other chats get
 "⛔ Unauthorized", and the attempt is logged.
 
 | Command | Shows |
@@ -290,7 +292,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 106 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 111 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later
