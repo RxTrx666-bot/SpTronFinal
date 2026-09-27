@@ -63,7 +63,8 @@ class TransferFilter:
     1. It is a decoded TRC-20 ``Transfer`` event/record
     2. Emitted by exactly the configured USDT contract
     3. Token metadata (when present) is USDT with 6 decimals
-    4. The monitored wallet is sender or recipient
+    4. The monitored wallet is sender or recipient, in a monitored direction
+       (ALERT_DIRECTIONS, default OUTGOING only)
     5. min_raw <= amount <= max_raw (inclusive, integer compare)
     """
 
@@ -75,6 +76,7 @@ class TransferFilter:
         max_raw: int,
         symbol: str = "USDT",
         decimals: int = 6,
+        directions: frozenset[Direction] | None = None,
     ) -> None:
         if min_raw < 0 or max_raw < min_raw:
             raise ValueError("invalid amount range")
@@ -84,6 +86,12 @@ class TransferFilter:
         self.max_raw = max_raw
         self.symbol = symbol
         self.decimals = decimals
+        # Which directions alert. SELF (wallet -> itself) is sent by the wallet, so it
+        # follows OUTGOING unless listed explicitly.
+        allowed = set(directions) if directions else set(Direction)
+        if Direction.OUTGOING in allowed:
+            allowed.add(Direction.SELF)
+        self.directions = frozenset(allowed)
 
     def amount_in_range(self, raw: int) -> bool:
         return self.min_raw <= raw <= self.max_raw
@@ -109,6 +117,8 @@ class TransferFilter:
         direction = self.direction_of(transfer.sender, transfer.recipient)
         if direction is None:
             return FilterDecision(False, "monitored wallet not involved")
+        if direction not in self.directions:
+            return FilterDecision(False, f"direction {direction.value} not monitored", direction)
         if not self.amount_in_range(transfer.amount_raw):
             return FilterDecision(
                 False,

@@ -33,11 +33,14 @@ class FakeTron:
         return self.head
 
     async def get_trc20_transfers(self, address, contract, *, min_timestamp=None, max_timestamp=None,
-                                  order="asc", limit=200, only_confirmed=False, fingerprint=None):
+                                  order="asc", limit=200, only_confirmed=False, fingerprint=None,
+                                  only_from=False):
         self._maybe_fail()
-        self.calls.append(("trc20", dict(min_timestamp=min_timestamp, max_timestamp=max_timestamp, order=order)))
+        self.calls.append(("trc20", dict(min_timestamp=min_timestamp, max_timestamp=max_timestamp, order=order,
+                                         only_from=only_from)))
         recs = [r for r in self.records
-                if (min_timestamp is None or r["block_timestamp"] >= min_timestamp)
+                if (not only_from or r["from"] == address)
+                and (min_timestamp is None or r["block_timestamp"] >= min_timestamp)
                 and (max_timestamp is None or r["block_timestamp"] <= max_timestamp)]
         recs.sort(key=lambda r: r["block_timestamp"], reverse=(order == "desc"))
         return recs[:limit], None
@@ -225,4 +228,59 @@ def test_detection_latency_uses_chain_timestamp():
         assert tx.block_timestamp_ms == BLOCK_TS + 3000
         assert tx.detected_at_ms - tx.block_timestamp_ms == 1120
         assert mon.stats.last_detection_latency_ms == 1120
+    run(go())
+
+
+def test_outgoing_only_account_mode_default():
+    """Production default: only transfers SENT by the wallet alert; TronGrid asked with only_from."""
+    async def go():
+        settings = make_settings(ALERT_DIRECTIONS="OUTGOING", VERIFY_EVENT_LOG="false")
+        mon, tron, repo, alerts = await account_monitor(settings)
+        await mon.initialize()
+        tron.records += [
+            trongrid_record(50, sender=OTHER, recipient=WALLET, ts=BLOCK_TS + 3000),   # incoming -> no
+            trongrid_record(51, sender=WALLET, recipient=OTHER, ts=BLOCK_TS + 3000),   # outgoing -> yes
+            trongrid_record(52, sender=WALLET, recipient=WALLET, ts=BLOCK_TS + 3000),  # self -> yes
+        ]
+        await mon.poll_once()
+        assert alerts.queued == [tx_hash(51), tx_hash(52)]
+        assert all(c[1]["only_from"] for c in tron.calls if c[0] == "trc20")
+    run(go())
+
+
+def test_outgoing_only_even_if_api_ignores_only_from():
+    """The filter itself rejects incoming, so a provider ignoring only_from cannot cause incoming alerts."""
+    async def go():
+        settings = make_settings(ALERT_DIRECTIONS="OUTGOING", VERIFY_EVENT_LOG="false")
+        mon, tron, repo, alerts = await account_monitor(settings)
+
+        original = tron.get_trc20_transfers
+
+        async def ignore_only_from(*args, **kwargs):
+            kwargs["only_from"] = False
+            return await original(*args, **kwargs)
+
+        tron.get_trc20_transfers = ignore_only_from
+        await mon.initialize()
+        tron.records += [trongrid_record(53, sender=OTHER, recipient=WALLET, ts=BLOCK_TS + 3000),
+                         trongrid_record(54, sender=WALLET, recipient=OTHER, ts=BLOCK_TS + 3000)]
+        await mon.poll_once()
+        assert alerts.queued == [tx_hash(54)]
+    run(go())
+
+
+def test_outgoing_only_block_mode():
+    async def go():
+        settings = make_settings(MONITOR_MODE="blocks", ALERT_DIRECTIONS="OUTGOING")
+        processor, repo, alerts, stats = await make_processor(settings)
+        tron = FakeTron()
+        mon = BlockMonitor(settings, tron, repo, processor, stats, sleep=_nosleep)
+        await mon.initialize()
+        tron.head = (70_000_001, BLOCK_TS + 3000)
+        tron.blocks[70_000_001] = [
+            tx_info(55, [transfer_log(OTHER, WALLET, 1_100_000)]),
+            tx_info(56, [transfer_log(WALLET, OTHER, 1_100_000)]),
+        ]
+        await mon.poll_once()
+        assert alerts.queued == [tx_hash(56)]
     run(go())

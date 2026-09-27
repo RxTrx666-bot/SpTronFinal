@@ -86,6 +86,7 @@ async def run(settings: Settings) -> int:
             settings.max_raw,
             settings.token_symbol,
             settings.token_decimals,
+            settings.alert_directions,
         ),
         repo,
         dispatcher,

@@ -177,6 +177,7 @@ class TronClient:
         limit: int = 200,
         only_confirmed: bool = False,
         fingerprint: str | None = None,
+        only_from: bool = False,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """TronGrid indexed TRC-20 transfers of an account (both directions)."""
         params: dict[str, Any] = {
@@ -192,6 +193,8 @@ class TronClient:
             params["only_confirmed"] = "true"
         if fingerprint:
             params["fingerprint"] = fingerprint
+        if only_from:
+            params["only_from"] = "true"
         data = await self.request("GET", f"/v1/accounts/{address}/transactions/trc20", params=params)
         if not isinstance(data, dict) or not isinstance(data.get("data"), list):
             raise TronApiError("unexpected trc20 response shape")

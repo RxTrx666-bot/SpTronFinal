@@ -104,6 +104,27 @@ def test_config_rejects_bad_range():
         make_settings(WALLET_ADDRESS="TWkvffFDMsqbmTLkMHMABmw452Hyq98cdX")  # bad checksum
 
 
+def test_default_is_outgoing_only():
+    from app.config import Settings
+    s = Settings.from_env({"TELEGRAM_BOT_TOKEN": "x:y", "TELEGRAM_ADMIN_CHAT_ID": "1"})
+    assert s.alert_directions == frozenset({Direction.OUTGOING}) and s.outgoing_only
+    f = TransferFilter(s.wallet_address, s.usdt_contract, s.min_raw, s.max_raw, directions=s.alert_directions)
+    incoming = f.evaluate(transfer(1_100_000, sender=OTHER, recipient=WALLET))
+    assert not incoming.matched and "INCOMING not monitored" in incoming.reason
+    assert f.evaluate(transfer(1_100_000, sender=WALLET, recipient=OTHER)).direction is Direction.OUTGOING
+    assert f.evaluate(transfer(1_100_000, sender=WALLET, recipient=WALLET)).matched  # self-send = outgoing
+    # outgoing amount range still enforced
+    assert not f.evaluate(transfer(1_200_001, sender=WALLET, recipient=OTHER)).matched
+    assert not f.evaluate(transfer(999_999, sender=WALLET, recipient=OTHER)).matched
+
+
+def test_alert_directions_config():
+    both = make_settings(ALERT_DIRECTIONS="outgoing, incoming")
+    assert both.alert_directions == frozenset({Direction.OUTGOING, Direction.INCOMING})
+    with pytest.raises(ConfigError):
+        make_settings(ALERT_DIRECTIONS="SIDEWAYS")
+
+
 def test_config_defaults():
     s = make_settings()
     assert s.min_usdt == "1.000000" and s.max_usdt == "1.200000"

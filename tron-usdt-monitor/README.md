@@ -36,7 +36,7 @@ TRON API ──► parser (strict validation) ──► filter ──► dedup (
    direction, filtered by the API to the USDT contract. Unconfirmed-but-in-block
    transfers are included, so detection is as fast as possible.
 2. Each record is strictly validated (tx id, Base58Check addresses, integer `value`, timestamp).
-   The filter then checks contract, symbol, decimals, event type, wallet involvement and the amount range.
+   The filter then checks contract, symbol, decimals, event type, direction (the wallet must be the sender) and the amount range.
 3. **On-chain verification** (`VERIFY_EVENT_LOG=true`): for each candidate the bot fetches
    `/wallet/gettransactioninfobyid` and decodes the raw TRC-20 event log itself:
    `Transfer(address,address,uint256)` with topic
@@ -263,7 +263,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 88 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 94 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

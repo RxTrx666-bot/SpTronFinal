@@ -34,6 +34,7 @@ def make_settings(**overrides: str) -> Settings:
         "USDT_CONTRACT": USDT,
         "DATABASE_URL": "sqlite://:memory:",
         "HEARTBEAT_FILE": "/tmp/claude-0/tron-test-heartbeat",
+        "ALERT_DIRECTIONS": "INCOMING,OUTGOING",
     }
     env.update(overrides)
     return Settings.from_env(env)
@@ -115,7 +116,8 @@ async def make_processor(settings: Settings | None = None, repo: SQLiteRepositor
         await repo.init()
     alerts = FakeAlerts()
     stats = MonitorStats()
-    flt = TransferFilter(settings.wallet_address, settings.usdt_contract, settings.min_raw, settings.max_raw)
+    flt = TransferFilter(settings.wallet_address, settings.usdt_contract, settings.min_raw, settings.max_raw,
+                         directions=settings.alert_directions)
     kwargs = {"clock": clock} if clock else {}
     return TransactionProcessor(settings, flt, repo, alerts, stats, **kwargs), repo, alerts, stats
 
