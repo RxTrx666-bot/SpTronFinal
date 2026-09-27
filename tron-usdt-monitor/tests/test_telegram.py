@@ -23,15 +23,15 @@ def test_alert_message_outgoing_and_incoming():
         settings = make_settings(TIMEZONE="Europe/Berlin")
         processor, repo, _, _ = await make_processor(settings, clock=lambda: TS + 1120)
         await processor.process(parse_trongrid_trc20_record(
-            trongrid_record(1, sender=WALLET, recipient=OTHER, value="1100000", ts=TS)))
+            trongrid_record(1, sender=WALLET, recipient=OTHER, value="1000087", ts=TS)))
         await processor.process(parse_trongrid_trc20_record(
-            trongrid_record(2, sender=OTHER, recipient=WALLET, value="1050000", ts=TS)))
+            trongrid_record(2, sender=OTHER, recipient=WALLET, value="1000050", ts=TS)))
         out = build_alert_message(await repo.get_transaction(tx_hash(1)), settings)
         inc = build_alert_message(await repo.get_transaction(tx_hash(2)), settings)
         assert "🚨 <b>USDT TRANSACTION DETECTED</b>" in out
-        assert "Direction: <b>OUTGOING</b>" in out and "Amount: <b>1.100000 USDT</b>" in out
+        assert "Direction: <b>OUTGOING</b>" in out and "Amount: <b>1.000087 USDT</b>" in out
         assert out.index(WALLET) < out.index(OTHER)  # From = wallet
-        assert "Direction: <b>INCOMING</b>" in inc and "1.050000 USDT" in inc
+        assert "Direction: <b>INCOMING</b>" in inc and "1.000050 USDT" in inc
         assert inc.index(OTHER) < inc.index(WALLET)  # To = wallet
         assert "Blockchain Time:\n2026-09-27 21:18:42 UTC\n2026-09-27 23:18:42 CEST" in out
         assert "Detected By Bot:\n2026-09-27 21:18:43 UTC" in out
@@ -85,7 +85,7 @@ def test_admin_commands():
         stats.poll_succeeded()
         wallet = await bot.handle_update(update(1001, "/wallet"))
         assert "👛 <b>MONITORED WALLET</b>" in wallet and WALLET in wallet
-        assert "1.000000 – 1.200000 USDT" in wallet and "🟢 ACTIVE" in wallet
+        assert "1.000000 – 1.000100 USDT" in wallet and "🟢 ACTIVE" in wallet
         assert "Direction:\nINCOMING 📥 + OUTGOING 📤" in wallet
         status = await bot.handle_update(update(1001, "/status@MyBot"))
         assert "Status: 🟢 ONLINE" in status and "TRON Mainnet" in status
@@ -111,3 +111,35 @@ def test_wallet_message_shows_outgoing_only():
     settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
     text = build_wallet_message(settings, MonitorStats())
     assert "Direction:\nOUTGOING only 📤" in text
+
+
+def test_wallet_created_sent_before_each_alert():
+    from app.telegram_bot import AlertDispatcher
+
+    async def go():
+        settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
+        processor, repo, _, stats = await make_processor(settings, clock=lambda: TS + 900)
+        await processor.process(parse_trongrid_trc20_record(
+            trongrid_record(7, sender=WALLET, recipient=OTHER, value="1000087", ts=TS)))
+        rec = Recorder()
+        dispatcher = AlertDispatcher(settings, TelegramClient("1:X", transport=httpx.MockTransport(rec)),
+                                     repo, stats)
+        await dispatcher.load_pending()
+        await dispatcher.drain()
+        texts = [body["text"] for _, body in rec.sent]
+        assert texts[0] == "🆕 <b>WALLET CREATED</b>\n\n<code>" + OTHER + "</code>"  # receiver wallet
+        assert texts[1].startswith("🚨 <b>USDT TRANSACTION DETECTED</b>")
+        assert "Amount: <b>1.000087 USDT</b>" in texts[1]
+        assert len(texts) == 2
+
+        # can be switched off
+        settings_off = make_settings(ALERT_DIRECTIONS="OUTGOING", WALLET_CREATED_NOTICE="false")
+        processor2, repo2, _, _ = await make_processor(settings_off)
+        await processor2.process(parse_trongrid_trc20_record(
+            trongrid_record(8, sender=WALLET, recipient=OTHER, value="1000100", ts=TS)))
+        rec2 = Recorder()
+        d2 = AlertDispatcher(settings_off, TelegramClient("1:X", transport=httpx.MockTransport(rec2)), repo2, stats)
+        await d2.load_pending()
+        await d2.drain()
+        assert len(rec2.sent) == 1 and "TRANSACTION DETECTED" in rec2.sent[0][1]["text"]
+    run(go())

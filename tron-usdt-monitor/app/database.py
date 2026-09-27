@@ -31,7 +31,7 @@ class NewTransaction:
     sender: str
     recipient: str
     amount_raw: int
-    amount_usdt: str  # exact decimal string, e.g. "1.100000"
+    amount_usdt: str  # exact decimal string, e.g. "1.000087"
     contract_address: str
     token_symbol: str
     detected_at_ms: int

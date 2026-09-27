@@ -194,6 +194,13 @@ def build_status_message(
     return "\n".join(lines)
 
 
+def build_wallet_created_message(tx: StoredTransaction) -> str:
+    """Sent right before the transaction alert. Shows the counterparty wallet
+    (the receiver for outgoing transfers, the sender for incoming ones)."""
+    wallet = tx.sender if tx.direction == "INCOMING" else tx.recipient
+    return "\n".join(["🆕 <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"])
+
+
 def build_limit_message(count: int, threshold: int) -> str:
     return "\n".join(
         [
