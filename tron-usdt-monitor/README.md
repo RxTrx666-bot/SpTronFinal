@@ -101,19 +101,23 @@ Right before each transaction alert, the bot sends:
 ```
 Then the 🚨 transaction alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
-### 80-transaction limit notice
+### 150-transaction limit: notice + pause
 Every matching transaction (live, not backfill) is counted. When the count reaches
-`TX_LIMIT_THRESHOLD` (default **80**), the bot sends, once, right after the 80th alert:
+`TX_LIMIT_THRESHOLD` (default **150**), right after the 150th alert every admin chat gets:
 ```
 Balance negative 🚨
 Fill resources
 Run again
+                       [ ▶️ Start ]
 ```
-Transaction alerts keep coming after that, so nothing is missed. After refilling, send **`/reset`**:
-the counter goes back to 0/80, and the notice fires again at the next 80. `/status` shows the
-counter (`🔢 37/80`). The count and the "already notified" flag are stored in the database, so a
-restart neither loses the count nor repeats the notice. If the bot crashes before the notice is
-delivered, it is sent on the next start.
+and the bot **pauses**: no detection and no alerts. After refilling, press **▶️ Start** (or send
+**`/start`**). Monitoring resumes **from that moment**, skipping whatever happened while paused, and the
+count starts again at 0/150. All admins are told "▶️ Monitoring resumed". `/status` and `/wallet`
+show ⏸️ PAUSED while waiting, and `/status` shows the counter (`🔢 37/150`).
+The count, the pause and the "already notified" flag are stored in the database, so the bot stays
+paused across restarts and never repeats the notice. Changing `TX_LIMIT_THRESHOLD` starts a fresh
+count. `/reset` restarts the count at any time (and resumes if paused). With `PAUSE_ON_LIMIT=false`
+the bot only sends the notice and keeps monitoring.
 
 ### Historical transactions
 With `BACKFILL_ENABLED=false` (default), the first start records the current chain time or block as
@@ -142,10 +146,10 @@ Only the configured chat IDs can use commands or receive alerts. Other chats get
 
 | Command | Shows |
 |---|---|
-| `/start` | Intro |
+| `/start` | Resumes monitoring after the 150-transaction pause (otherwise shows the intro) |
 | `/status` | Online/degraded status, wallet, network, contract, range, detected count, last tx checked, last match, API latency, detection latency, uptime |
 | `/wallet` | Monitored wallet, network, token, range, monitoring state |
-| `/reset` | Restarts the 80-transaction counter at 0 (send it after refilling) |
+| `/reset` | Restarts the transaction counter at 0 (also resumes if paused) |
 | `/help` | Command list |
 
 ---
@@ -290,11 +294,11 @@ app/
   database.py          Repository interface + SQLite implementation
   telegram_bot.py      Telegram client, alert dispatcher, admin-only commands
   formatting.py        alert / status / wallet messages
-  tx_limit.py          80-transaction counter + "Balance negative" notice
+  tx_limit.py          150-transaction counter, "Balance negative" notice, pause/resume
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 111 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 114 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

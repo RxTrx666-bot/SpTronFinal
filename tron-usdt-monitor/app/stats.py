@@ -31,6 +31,7 @@ class MonitorStats:
     alert_failures: int = 0
     alert_queue_size: int = 0
     warnings: list[str] = field(default_factory=list)
+    paused: bool = False
 
     def poll_succeeded(self) -> None:
         self.polls += 1

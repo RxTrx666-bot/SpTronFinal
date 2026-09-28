@@ -82,7 +82,9 @@ def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
             settings.directions_label,
             "",
             "Monitoring:",
-            "🟢 ACTIVE" if active else "🔴 NOT ACTIVE (API unreachable, see /status)",
+            "⏸️ PAUSED – press ▶️ Start or send /start"
+            if stats.paused
+            else ("🟢 ACTIVE" if active else "🔴 NOT ACTIVE (API unreachable, see /status)"),
         ]
     )
 
@@ -98,7 +100,9 @@ def build_status_message(
     limit_count: int | None = None,
 ) -> str:
     healthy = stats.is_healthy(settings.poll_interval_seconds)
-    if healthy:
+    if stats.paused:
+        status, monitoring = "⏸️ PAUSED", "⏸️ PAUSED (transaction limit reached) – press ▶️ Start or send /start"
+    elif healthy:
         status, monitoring = "🟢 ONLINE", "🟢 ACTIVE"
     elif not stats.initialized or (stats.last_poll_ok_ms is None and not stats.consecutive_errors):
         status, monitoring = "🟡 STARTING", "🟡 CONNECTING"
@@ -201,15 +205,20 @@ def build_wallet_created_message(tx: StoredTransaction) -> str:
     return "\n".join(["🆕 <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"])
 
 
-def build_limit_message(count: int, threshold: int) -> str:
+def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
+    footer = (
+        f"<i>{count}/{threshold} transactions reached. ⏸️ Monitoring is PAUSED.\n"
+        "Press ▶️ Start (or send /start) after refilling.</i>"
+        if paused
+        else f"<i>{count}/{threshold} transactions reached. Send /reset after refilling to start counting again.</i>"
+    )
+    return "\n".join(["Balance negative 🚨", "Fill resources", "Run again", "", footer])
+
+
+def build_resumed_message(threshold: int, cycle: int, was_paused: bool) -> str:
+    head = "▶️ <b>Monitoring resumed</b>" if was_paused else "🔄 <b>Counter reset</b>"
     return "\n".join(
-        [
-            "Balance negative 🚨",
-            "Fill resources",
-            "Run again",
-            "",
-            f"<i>{count}/{threshold} transactions reached. Send /reset after refilling to start counting again.</i>",
-        ]
+        [head, "", f"Transaction Counter: 🔢 0/{threshold}", f"Cycle #{cycle} started. Counting from now."]
     )
 
 
@@ -223,7 +232,8 @@ def build_help_message(settings: Settings) -> str:
             "",
             "/status – monitoring status and latency",
             "/wallet – monitored wallet and filter",
-            f"/reset – restart the {settings.tx_limit_threshold}-transaction counter (after refilling)",
+            f"/start – resume after the {settings.tx_limit_threshold}-transaction limit (after refilling)",
+            f"/reset – restart the {settings.tx_limit_threshold}-transaction counter now",
             "/help – this message",
         ]
     )
