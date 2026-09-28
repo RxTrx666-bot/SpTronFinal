@@ -4,7 +4,7 @@
 * ``AlertDispatcher`` – single consumer queue: sends alerts, marks them 'sent' in the DB.
   Undelivered alerts stay 'pending' and are re-queued on restart, so an alert is never
   lost when Telegram is down and never sent twice by concurrent senders.
-* ``TelegramBot``     – admin-only command handling (/start /status /wallet /help).
+* ``TelegramBot``     – admin-only command handling (/letsgo /start /status /wallet /reset /help).
 """
 
 from __future__ import annotations
@@ -30,10 +30,11 @@ NOTICE_PREFIX = "notice:"
 log = logging.getLogger(__name__)
 
 COMMANDS = [
-    ("start", "Start / resume monitoring after refilling"),
+    ("letsgo", "Start monitoring (after refilling)"),
+    ("start", "Intro"),
     ("status", "Monitoring status and latency"),
     ("wallet", "Monitored wallet and amount range"),
-    ("reset", "Restart the transaction counter (after refilling)"),
+    ("reset", "Restart the transaction counter at 0"),
     ("help", "Help"),
 ]
 
@@ -99,7 +100,7 @@ class TelegramClient:
 
 
 RESUME_CALLBACK = "resume"
-START_BUTTON = {"inline_keyboard": [[{"text": "▶️ Start", "callback_data": RESUME_CALLBACK}]]}
+START_BUTTON = {"inline_keyboard": [[{"text": "🚀 Let's go", "callback_data": RESUME_CALLBACK}]]}
 
 
 class AlertDispatcher:
@@ -214,7 +215,7 @@ class AlertDispatcher:
                 if delivered:
                     log.error("telegram_chat_unreachable_skipped",
                               extra=kv(item=label, chat_id=chat_id, error=str(exc),
-                                       hint="that person must open the bot and press Start"))
+                                       hint="that person must open the bot and press Telegram's Start"))
                 else:
                     retry.append(chat_id)
                     delay = max(delay, backoff)
@@ -295,11 +296,11 @@ class TelegramBot:
             except TelegramApiError as exc:
                 log.warning("telegram_setup_call_failed", extra=kv(method=method, error=str(exc)))
 
-    async def notify_admin(self, text: str) -> None:
+    async def notify_admin(self, text: str, reply_markup: dict[str, Any] | None = None) -> None:
         """Best-effort message to every admin chat (startup notices)."""
         for chat_id in self.settings.telegram_admin_chat_ids:
             try:
-                await self.client.send_message(chat_id, text)
+                await self.client.send_message(chat_id, text, reply_markup=reply_markup)
             except TelegramApiError as exc:
                 log.warning("telegram_notify_failed", extra=kv(chat_id=chat_id, error=str(exc)))
 
@@ -329,11 +330,11 @@ class TelegramBot:
                 backoff = min(backoff * 2, 60.0)
 
     async def handle_callback(self, query: dict[str, Any]) -> str | None:
-        """Inline button presses (▶️ Start under the limit notice)."""
+        """Inline button presses (🚀 Let's go under the pause messages)."""
         chat_id = ((query.get("message") or {}).get("chat") or {}).get("id")
         user_id = (query.get("from") or {}).get("id")
         authorized = self.is_authorized(chat_id) or self.is_authorized(user_id)
-        # An old ▶️ Start button pressed while already running must not reset the count.
+        # An old 🚀 Let's go button pressed while already running must not reset the count.
         running = self.limit_tracker is None or not self.limit_tracker.paused
         answer = "⛔ Unauthorized" if not authorized else ("✅ Already running" if running else "")
         try:
@@ -346,13 +347,13 @@ class TelegramBot:
         if query.get("data") != RESUME_CALLBACK or running:
             return None
         reply = await self.resume_monitoring()
-        log.info("command_handled", extra=kv(command="start_button", user_id=user_id))
+        log.info("command_handled", extra=kv(command="letsgo_button", user_id=user_id))
         return reply
 
     async def resume_monitoring(self) -> str:
-        """▶️ Start / /start: resume after the limit pause and start a new count. Tells every admin."""
+        """🚀 Let's go / /letsgo: start monitoring from now with a new count. Tells every admin."""
         tracker = self.limit_tracker
-        if tracker is None or not tracker.enabled:
+        if tracker is None:
             return formatting.build_start_message(self.settings)
         was_paused, cycle = await tracker.resume()
         self.stats.paused = False
@@ -377,10 +378,14 @@ class TelegramBot:
             except Exception:
                 pass
             return None
-        if command == "/start" and self.limit_tracker is not None and self.limit_tracker.paused:
-            # resume_monitoring() already notifies every admin chat (including this one)
-            reply = await self.resume_monitoring()
-            log.info("command_handled", extra=kv(command=command))
+        if command == "/letsgo":
+            if self.limit_tracker is not None and self.limit_tracker.paused:
+                # resume_monitoring() already notifies every admin chat (including this one)
+                reply = await self.resume_monitoring()
+                log.info("command_handled", extra=kv(command=command))
+                return reply
+            reply = "✅ Already running – monitoring is active."
+            await self.client.send_message(chat_id, reply)
             return reply
         reply = await self.render_command(command)
         if reply is None:
@@ -391,7 +396,8 @@ class TelegramBot:
 
     async def render_command(self, command: str) -> str | None:
         if command == "/start":
-            return formatting.build_start_message(self.settings)
+            paused = self.limit_tracker is not None and self.limit_tracker.paused
+            return formatting.build_start_message(self.settings, paused)
         if command == "/help":
             return formatting.build_help_message(self.settings)
         if command == "/wallet":
@@ -399,9 +405,9 @@ class TelegramBot:
         if command == "/reset":
             if self.limit_tracker is None or not self.limit_tracker.enabled:
                 return "Transaction counter is disabled (TX_LIMIT_THRESHOLD=0)."
-            was_paused, cycle = await self.limit_tracker.resume()
-            self.stats.paused = False
-            return formatting.build_resumed_message(self.limit_tracker.threshold, cycle, was_paused)
+            cycle = await self.limit_tracker.reset()  # counter only; starting is /letsgo's job
+            return formatting.build_resumed_message(self.limit_tracker.threshold, cycle, False,
+                                                    self.limit_tracker.paused)
         if command == "/status":
             return formatting.build_status_message(
                 self.settings,

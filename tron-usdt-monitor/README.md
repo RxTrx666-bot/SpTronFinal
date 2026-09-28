@@ -103,23 +103,24 @@ Right before each transaction alert, the bot sends:
 ```
 Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
-### 150-transaction limit: notice + pause
-Every matching transaction (live, not backfill) is counted. When the count reaches
-`TX_LIMIT_THRESHOLD` (default **150**), right after the 150th alert every admin chat gets:
-```
-Balance negative 🚨
-Fill resources
-Run again
-                       [ ▶️ Start ]
-```
-and the bot **pauses**: no detection and no alerts. After refilling, press **▶️ Start** (or send
-**`/start`**). Monitoring resumes **from that moment**, skipping whatever happened while paused, and the
-count starts again at 0/150. All admins are told "🔄 Monitoring resumed". `/status` and `/wallet`
-show ⏸️ PAUSED while waiting, and `/status` shows the counter (`🔢 37/150`).
-The count, the pause and the "already notified" flag are stored in the database, so the bot stays
-paused across restarts and never repeats the notice. Changing `TX_LIMIT_THRESHOLD` starts a fresh
-count. `/reset` restarts the count at any time (and resumes if paused). With `PAUSE_ON_LIMIT=false`
-the bot only sends the notice and keeps monitoring.
+### /letsgo: nothing runs until you say so
+- **On every start** (update, restart, VPS reboot) the bot comes online **paused** and sends
+  "⏸️ Bot online – waiting for /letsgo" with a **🚀 Let's go** button. Nothing is detected or alerted.
+- **Send /letsgo** (or press the button) after refilling. Monitoring starts **from that moment**,
+  the counter starts at 0/150, and every admin gets "🚀 Let's go! Monitoring started".
+- **At 150 transactions** (`TX_LIMIT_THRESHOLD`), right after the 150th alert, every admin gets:
+  ```
+  Balance negative 🚨
+  Fill resources
+  Run again
+                         [ 🚀 Let's go ]
+  ```
+  and the bot pauses again until the next /letsgo.
+- `/start` never starts monitoring, because Telegram sends it automatically when someone opens the bot.
+  `/reset` only restarts the counter. An old 🚀 button pressed while running does nothing.
+- The pause state, the count and the "already notified" flag are stored in the database.
+  `START_PAUSED=false` makes the bot resume monitoring by itself after a restart.
+  `PAUSE_ON_LIMIT=false` sends only the notice at 150 and keeps going.
 
 ### Historical transactions
 With `BACKFILL_ENABLED=false` (default), the first start records the current chain time or block as
@@ -148,10 +149,11 @@ Only the configured chat IDs can use commands or receive alerts. Other chats get
 
 | Command | Shows |
 |---|---|
-| `/start` | Resumes monitoring after the 150-transaction pause (otherwise shows the intro) |
+| `/letsgo` | **Starts monitoring** (after refilling). Also the 🚀 Let's go button |
+| `/start` | Intro (does not start monitoring) |
 | `/status` | Online/degraded status, wallet, network, contract, range, detected count, last tx checked, last match, API latency, detection latency, uptime |
 | `/wallet` | Monitored wallet, network, token, range, monitoring state |
-| `/reset` | Restarts the transaction counter at 0 (also resumes if paused) |
+| `/reset` | Restarts the transaction counter at 0 (does not start monitoring) |
 | `/help` | Command list |
 
 ---
@@ -214,7 +216,7 @@ docker compose build
 ```bash
 docker compose up -d
 ```
-You should receive "🚀 Monitor started" in Telegram. Send `/status` to check it.
+You should receive "⏸️ Bot online – waiting for /letsgo" in Telegram. Send `/letsgo` to start monitoring, then `/status` to check it.
 
 **8. Check logs**
 ```bash
@@ -300,7 +302,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 117 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 120 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

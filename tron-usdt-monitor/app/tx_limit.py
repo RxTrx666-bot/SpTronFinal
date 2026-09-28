@@ -8,8 +8,9 @@ count reaches TX_LIMIT_THRESHOLD:
    button is sent (through the alert queue, right after the alert that hit the limit,
    retried until delivered).
 
-Pressing ▶️ Start (or /start, /reset) resumes monitoring *from that moment* and starts
-a new cycle at 0. Changing TX_LIMIT_THRESHOLD also starts a new cycle ("count from now").
+Pressing 🚀 Let's go (or sending /letsgo) resumes monitoring *from that moment* and
+starts a new cycle at 0. With START_PAUSED=true the bot also starts paused after every
+(re)start and waits for /letsgo. Changing TX_LIMIT_THRESHOLD also starts a new cycle ("count from now").
 
 All state lives in the database, so count, pause and "already notified" survive restarts.
 """
@@ -98,6 +99,13 @@ class TxLimitTracker:
         await self.repo.set_state(STATE_CYCLE, str(cycle))
         log.info("tx_limit_reset", extra=kv(cycle=cycle, threshold=self.threshold))
         return cycle
+
+    async def pause(self, reason: str) -> None:
+        """Pause monitoring until /letsgo (used at startup when START_PAUSED=true)."""
+        if not self.paused:
+            self.paused = True
+            await self.repo.set_state(STATE_PAUSED, "1")
+        log.warning("monitoring_paused_waiting_for_letsgo", extra=kv(reason=reason))
 
     async def resume(self) -> tuple[bool, int]:
         """▶️ Start: un-pause (monitoring restarts from *now*) and begin a new cycle.
