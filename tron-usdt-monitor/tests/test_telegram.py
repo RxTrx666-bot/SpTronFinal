@@ -28,7 +28,7 @@ def test_alert_message_outgoing_and_incoming():
             trongrid_record(2, sender=OTHER, recipient=WALLET, value="1000050", ts=TS)))
         out = build_alert_message(await repo.get_transaction(tx_hash(1)), settings)
         inc = build_alert_message(await repo.get_transaction(tx_hash(2)), settings)
-        assert "🚨 <b>USDT TRANSACTION DETECTED</b>" in out
+        assert "✅ <b>USDT TRANSFER DONE</b>" in out
         assert "Direction: <b>OUTGOING</b>" in out and "Amount: <b>1.000087 USDT</b>" in out
         assert out.index(WALLET) < out.index(OTHER)  # From = wallet
         assert "Direction: <b>INCOMING</b>" in inc and "1.000050 USDT" in inc
@@ -84,9 +84,9 @@ def test_admin_commands():
         stats.initialized = True
         stats.poll_succeeded()
         wallet = await bot.handle_update(update(1001, "/wallet"))
-        assert "👛 <b>MONITORED WALLET</b>" in wallet and WALLET in wallet
+        assert "💼 <b>MONITORED WALLET</b>" in wallet and WALLET in wallet
         assert "1.000000 – 1.000100 USDT" in wallet and "🟢 ACTIVE" in wallet
-        assert "Direction:\nINCOMING 📥 + OUTGOING 📤" in wallet
+        assert "Direction:\nINCOMING ⬇️ + OUTGOING ⬆️" in wallet
         status = await bot.handle_update(update(1001, "/status@MyBot"))
         assert "Status: 🟢 ONLINE" in status and "TRON Mainnet" in status
         assert "Transactions Detected:\n1 total" in status and "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
@@ -110,7 +110,7 @@ def test_status_degraded_when_polls_stale():
 def test_wallet_message_shows_outgoing_only():
     settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
     text = build_wallet_message(settings, MonitorStats())
-    assert "Direction:\nOUTGOING only 📤" in text
+    assert "Direction:\nOUTGOING only ⬆️" in text
 
 
 def test_wallet_created_sent_before_each_alert():
@@ -127,8 +127,8 @@ def test_wallet_created_sent_before_each_alert():
         await dispatcher.load_pending()
         await dispatcher.drain()
         texts = [body["text"] for _, body in rec.sent]
-        assert texts[0] == "🆕 <b>WALLET CREATED</b>\n\n<code>" + OTHER + "</code>"  # receiver wallet
-        assert texts[1].startswith("🚨 <b>USDT TRANSACTION DETECTED</b>")
+        assert texts[0] == "✨ <b>WALLET CREATED</b>\n\n<code>" + OTHER + "</code>"  # receiver wallet
+        assert texts[1].startswith("✅ <b>USDT TRANSFER DONE</b>")
         assert "Amount: <b>1.000087 USDT</b>" in texts[1]
         assert len(texts) == 2
 
@@ -141,5 +141,21 @@ def test_wallet_created_sent_before_each_alert():
         d2 = AlertDispatcher(settings_off, TelegramClient("1:X", transport=httpx.MockTransport(rec2)), repo2, stats)
         await d2.load_pending()
         await d2.drain()
-        assert len(rec2.sent) == 1 and "TRANSACTION DETECTED" in rec2.sent[0][1]["text"]
+        assert len(rec2.sent) == 1 and "TRANSFER DONE" in rec2.sent[0][1]["text"]
+    run(go())
+
+
+def test_new_icons_and_transfer_done_wording():
+    async def go():
+        settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
+        processor, repo, _, _ = await make_processor(settings, clock=lambda: TS + 1000)
+        await processor.process(parse_trongrid_trc20_record(
+            trongrid_record(9, sender=WALLET, recipient=OTHER, value="1000087", ts=TS)))
+        text = build_alert_message(await repo.get_transaction(tx_hash(9)), settings)
+        assert text.startswith("✅ <b>USDT TRANSFER DONE</b>")
+        assert "DETECTED" not in text.split("\n")[0]
+        for line in ("🌐 Network: TRON", "💎 Token: USDT TRC-20", "🧭 Direction: <b>OUTGOING</b> ⬆️",
+                     "💵 Amount: <b>1.000087 USDT</b>", "👤 From:", "🎯 To:", "⛓️ Blockchain Time:",
+                     "🤖 Detected By Bot:", "⚡ Detection Latency: 1.000 s", "🔑 Transaction Hash:", "🔍 TRONSCAN:"):
+            assert line in text, line
     run(go())

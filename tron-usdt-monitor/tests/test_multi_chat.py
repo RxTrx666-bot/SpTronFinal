@@ -65,7 +65,7 @@ def test_every_chat_gets_wallet_created_then_alert():
         repo = await _deliver_one(tg)
         for chat in (8020903132, 8972433273):
             texts = [t for c, t in tg.sent if c == chat]
-            assert len(texts) == 2 and "WALLET CREATED" in texts[0] and "TRANSACTION DETECTED" in texts[1]
+            assert len(texts) == 2 and "WALLET CREATED" in texts[0] and "TRANSFER DONE" in texts[1]
         assert (await repo.get_transaction(tx_hash(1))).alert_status == "sent"
     run(go())
 
