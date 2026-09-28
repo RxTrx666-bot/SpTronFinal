@@ -255,7 +255,7 @@ class Settings:
             database_url=e.str("DATABASE_URL", "sqlite:///data/monitor.db"),
             log_level=e.str("LOG_LEVEL", "INFO").upper(),
             log_format=log_format,
-            notify_on_startup=e.bool("NOTIFY_ON_STARTUP", True),
+            notify_on_startup=e.bool("NOTIFY_ON_STARTUP", False),
             heartbeat_file=e.str("HEARTBEAT_FILE", "data/heartbeat"),
             telegram_api_url=e.str("TELEGRAM_API_URL", "https://api.telegram.org").rstrip("/"),
         )

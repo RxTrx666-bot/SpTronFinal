@@ -135,3 +135,4 @@ def test_config_defaults():
     assert s.monitor_mode == "account"
     assert s.poll_interval_seconds == 2.0
     assert s.backfill_enabled is False and s.backfill_limit == 100
+    assert s.notify_on_startup is False  # restarts/updates are silent in Telegram
