@@ -108,7 +108,8 @@ async def run(settings: Settings) -> int:
             stats.warnings = await run_startup_checks(settings, tron)
         except StartupCheckError as exc:
             log.critical("startup_check_failed", extra=kv(error=str(exc)))
-            await bot.notify_admin(f"❌ Monitor NOT started:\n{exc}")
+            if settings.notify_on_startup:
+                await bot.notify_admin(f"❌ Monitor NOT started:\n{exc}")
             return 2
 
         await limit_tracker.load()

@@ -106,8 +106,8 @@ Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_
 ### Hidden start command: /letsgo
 `/letsgo` is **secret**. No message, button, `/help` text or Telegram command menu ever shows it.
 Only people who know it can type it, and only the admin chat IDs are accepted.
-- **On every start** (update, restart, VPS reboot) the bot comes online **paused** and sends
-  "⏸️ Bot online – paused". Nothing is detected or alerted.
+- **On every start** (update, restart, VPS reboot) the bot comes online **paused and silent**:
+  no Telegram message is sent (`NOTIFY_ON_STARTUP=false`) and nothing is detected or alerted.
 - **Type `/letsgo`** after refilling. Monitoring starts **from that moment**, the counter starts at
   0/150, and every admin gets "🚀 Monitoring started".
 - **At 150 transactions** (`TX_LIMIT_THRESHOLD`), right after the 150th alert, every admin gets:
@@ -218,7 +218,7 @@ docker compose build
 ```bash
 docker compose up -d
 ```
-You should receive "⏸️ Bot online – paused" in Telegram. Type the hidden `/letsgo` to start monitoring, then `/status` to check it.
+The bot starts **silently** (no Telegram message) and paused. Type the hidden `/letsgo` to start monitoring, then `/status` to check it.
 
 **8. Check logs**
 ```bash
