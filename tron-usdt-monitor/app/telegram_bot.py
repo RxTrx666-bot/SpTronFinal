@@ -4,7 +4,8 @@
 * ``AlertDispatcher`` – single consumer queue: sends alerts, marks them 'sent' in the DB.
   Undelivered alerts stay 'pending' and are re-queued on restart, so an alert is never
   lost when Telegram is down and never sent twice by concurrent senders.
-* ``TelegramBot``     – admin-only command handling (/letsgo /start /status /wallet /reset /help).
+* ``TelegramBot``     – admin-only command handling (/start /status /wallet /reset /help, plus the
+  hidden /letsgo, which is never shown in any message, menu or button).
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ NOTICE_PREFIX = "notice:"
 log = logging.getLogger(__name__)
 
 COMMANDS = [
-    ("letsgo", "Start monitoring (after refilling)"),
     ("start", "Intro"),
     ("status", "Monitoring status and latency"),
     ("wallet", "Monitored wallet and amount range"),
@@ -100,7 +100,8 @@ class TelegramClient:
 
 
 RESUME_CALLBACK = "resume"
-START_BUTTON = {"inline_keyboard": [[{"text": "🚀 Let's go", "callback_data": RESUME_CALLBACK}]]}
+# Buttons are no longer sent (the start command is kept hidden); RESUME_CALLBACK is still
+# handled so buttons on messages sent by older versions keep working.
 
 
 class AlertDispatcher:
@@ -170,8 +171,7 @@ class AlertDispatcher:
         if tracker is None or await tracker.already_notified(cycle) or await tracker.cycle() != cycle:
             return False
         text = formatting.build_limit_message(await tracker.count(), tracker.threshold, tracker.paused)
-        markup = START_BUTTON if tracker.paused else None
-        if await self._broadcast(text, stop, label=f"limit_notice_cycle_{cycle}", reply_markup=markup):
+        if await self._broadcast(text, stop, label=f"limit_notice_cycle_{cycle}"):
             await tracker.mark_notified(cycle)
             log.info("tx_limit_notice_sent", extra=kv(cycle=cycle))
             return True
@@ -330,7 +330,7 @@ class TelegramBot:
                 backoff = min(backoff * 2, 60.0)
 
     async def handle_callback(self, query: dict[str, Any]) -> str | None:
-        """Inline button presses (🚀 Let's go under the pause messages)."""
+        """Inline button presses (only on messages sent by older versions)."""
         chat_id = ((query.get("message") or {}).get("chat") or {}).get("id")
         user_id = (query.get("from") or {}).get("id")
         authorized = self.is_authorized(chat_id) or self.is_authorized(user_id)
@@ -351,7 +351,7 @@ class TelegramBot:
         return reply
 
     async def resume_monitoring(self) -> str:
-        """🚀 Let's go / /letsgo: start monitoring from now with a new count. Tells every admin."""
+        """Hidden /letsgo: start monitoring from now with a new count. Tells every admin."""
         tracker = self.limit_tracker
         if tracker is None:
             return formatting.build_start_message(self.settings)
