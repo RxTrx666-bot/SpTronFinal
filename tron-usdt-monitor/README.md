@@ -103,24 +103,25 @@ Right before each transaction alert, the bot sends:
 ```
 Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
-### /letsgo: nothing runs until you say so
+### Hidden start command: /letsgo
+`/letsgo` is **secret**. No message, button, `/help` text or Telegram command menu ever shows it.
+Only people who know it can type it, and only the admin chat IDs are accepted.
 - **On every start** (update, restart, VPS reboot) the bot comes online **paused** and sends
-  "⏸️ Bot online – waiting for /letsgo" with a **🚀 Let's go** button. Nothing is detected or alerted.
-- **Send /letsgo** (or press the button) after refilling. Monitoring starts **from that moment**,
-  the counter starts at 0/150, and every admin gets "🚀 Let's go! Monitoring started".
+  "⏸️ Bot online – paused". Nothing is detected or alerted.
+- **Type `/letsgo`** after refilling. Monitoring starts **from that moment**, the counter starts at
+  0/150, and every admin gets "🚀 Monitoring started".
 - **At 150 transactions** (`TX_LIMIT_THRESHOLD`), right after the 150th alert, every admin gets:
   ```
   Balance negative 🚨
   Fill resources
   Run again
-                         [ 🚀 Let's go ]
+
+  150/150 transactions reached. ⏸️ Monitoring is PAUSED.
   ```
-  and the bot pauses again until the next /letsgo.
-- `/start` never starts monitoring, because Telegram sends it automatically when someone opens the bot.
-  `/reset` only restarts the counter. An old 🚀 button pressed while running does nothing.
-- The pause state, the count and the "already notified" flag are stored in the database.
-  `START_PAUSED=false` makes the bot resume monitoring by itself after a restart.
-  `PAUSE_ON_LIMIT=false` sends only the notice at 150 and keeps going.
+  and the bot pauses again until the next `/letsgo`.
+- `/start` never starts monitoring. `/reset` only restarts the counter.
+- The pause state and count are stored in the database. `START_PAUSED=false` makes the bot resume
+  by itself after a restart. `PAUSE_ON_LIMIT=false` sends only the notice at 150.
 
 ### Historical transactions
 With `BACKFILL_ENABLED=false` (default), the first start records the current chain time or block as
@@ -149,8 +150,9 @@ Only the configured chat IDs can use commands or receive alerts. Other chats get
 
 | Command | Shows |
 |---|---|
-| `/letsgo` | **Starts monitoring** (after refilling). Also the 🚀 Let's go button |
 | `/start` | Intro (does not start monitoring) |
+
+The hidden `/letsgo` starts monitoring. It is not listed in the bot's menu or `/help`.
 | `/status` | Online/degraded status, wallet, network, contract, range, detected count, last tx checked, last match, API latency, detection latency, uptime |
 | `/wallet` | Monitored wallet, network, token, range, monitoring state |
 | `/reset` | Restarts the transaction counter at 0 (does not start monitoring) |
@@ -216,7 +218,7 @@ docker compose build
 ```bash
 docker compose up -d
 ```
-You should receive "⏸️ Bot online – waiting for /letsgo" in Telegram. Send `/letsgo` to start monitoring, then `/status` to check it.
+You should receive "⏸️ Bot online – paused" in Telegram. Type the hidden `/letsgo` to start monitoring, then `/status` to check it.
 
 **8. Check logs**
 ```bash
@@ -302,7 +304,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 120 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 121 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

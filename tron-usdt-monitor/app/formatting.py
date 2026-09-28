@@ -82,7 +82,7 @@ def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
             settings.directions_label,
             "",
             "Monitoring:",
-            "⏸️ PAUSED – send /letsgo to start"
+            "⏸️ PAUSED"
             if stats.paused
             else ("🟢 ACTIVE" if active else "🔴 NOT ACTIVE (API unreachable, see /status)"),
         ]
@@ -101,7 +101,7 @@ def build_status_message(
 ) -> str:
     healthy = stats.is_healthy(settings.poll_interval_seconds)
     if stats.paused:
-        status, monitoring = "⏸️ PAUSED", "⏸️ PAUSED – waiting for /letsgo (after refilling)"
+        status, monitoring = "⏸️ PAUSED", "⏸️ PAUSED"
     elif healthy:
         status, monitoring = "🟢 ONLINE", "🟢 ACTIVE"
     elif not stats.initialized or (stats.last_poll_ok_ms is None and not stats.consecutive_errors):
@@ -211,8 +211,7 @@ def build_wallet_created_message(tx: StoredTransaction, gpu_type: str = "") -> s
 
 def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
     footer = (
-        f"<i>{count}/{threshold} transactions reached. ⏸️ Monitoring is PAUSED.\n"
-        "After refilling press 🚀 Let's go (or send /letsgo).</i>"
+        f"<i>{count}/{threshold} transactions reached. ⏸️ Monitoring is PAUSED.</i>"
         if paused
         else f"<i>{count}/{threshold} transactions reached. Send /reset after refilling to start counting again.</i>"
     )
@@ -220,14 +219,14 @@ def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
 
 
 def build_resumed_message(threshold: int, cycle: int, was_paused: bool, still_paused: bool = False) -> str:
-    head = "🚀 <b>Let's go! Monitoring started</b>" if was_paused else "♻️ <b>Counter reset</b>"
+    head = "🚀 <b>Monitoring started</b>" if was_paused else "♻️ <b>Counter reset</b>"
     lines = [head, ""]
     if threshold:
         lines += [f"Transaction Counter: 🔢 0/{threshold}", f"Cycle #{cycle} started. Counting from now."]
     else:
         lines.append("Watching from now.")
     if still_paused:
-        lines += ["", "⏸️ Still paused – send /letsgo to start."]
+        lines += ["", "⏸️ Still paused."]
     return "\n".join(lines)
 
 
@@ -241,7 +240,6 @@ def build_help_message(settings: Settings) -> str:
             "",
             "/status – monitoring status and latency",
             "/wallet – monitored wallet and filter",
-            "/letsgo – start monitoring (after refilling)",
             f"/reset – restart the {settings.tx_limit_threshold}-transaction counter at 0",
             "/help – this message",
         ]
@@ -250,7 +248,7 @@ def build_help_message(settings: Settings) -> str:
 
 def build_start_message(settings: Settings, paused: bool = False) -> str:
     head = (
-        "⏸️ <b>TRON USDT Monitor is waiting.</b>\n\nSend /letsgo to start monitoring."
+        "⏸️ <b>TRON USDT Monitor is paused.</b>"
         if paused
         else "🤝 <b>TRON USDT Monitor is running.</b>\n\nAlerts are sent here automatically."
     )
@@ -259,14 +257,12 @@ def build_start_message(settings: Settings, paused: bool = False) -> str:
 
 def build_startup_notice(settings: Settings, warnings: list[str], paused: bool = False) -> str:
     lines = [
-        "⏸️ <b>Bot online – waiting for /letsgo</b>" if paused else "🚀 <b>Monitor started</b>",
+        "⏸️ <b>Bot online – paused</b>" if paused else "🚀 <b>Monitor started</b>",
         "",
         f"Wallet: <code>{escape(settings.wallet_address)}</code>",
         f"Range: {settings.min_usdt} – {settings.max_usdt} USDT",
         f"Direction: {settings.directions_label}",
         f"Mode: {escape(settings.monitor_mode)}",
     ]
-    if paused:
-        lines += ["", "Monitoring starts when you press 🚀 Let's go or send /letsgo."]
     lines += [f"⚠️ {escape(w)}" for w in warnings]
     return "\n".join(lines)

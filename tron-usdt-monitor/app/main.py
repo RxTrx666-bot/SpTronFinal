@@ -19,7 +19,7 @@ from app.formatting import build_startup_notice
 from app.logger import kv, setup_logging
 from app.startup_checks import StartupCheckError, run_startup_checks
 from app.stats import MonitorStats
-from app.telegram_bot import START_BUTTON, AlertDispatcher, TelegramBot, TelegramClient
+from app.telegram_bot import AlertDispatcher, TelegramBot, TelegramClient
 from app.timeutil import now_ms
 from app.tron_client import TronClient
 from app.tron_monitor import TransactionProcessor, build_monitor
@@ -118,10 +118,7 @@ async def run(settings: Settings) -> int:
         await dispatcher.load_pending()
         await limit_tracker.check()  # re-send the notice if a crash happened before delivery
         if settings.notify_on_startup:
-            await bot.notify_admin(
-                build_startup_notice(settings, stats.warnings, limit_tracker.paused),
-                reply_markup=START_BUTTON if limit_tracker.paused else None,
-            )
+            await bot.notify_admin(build_startup_notice(settings, stats.warnings, limit_tracker.paused))
 
         tasks = [
             asyncio.create_task(supervise("alerts", lambda: dispatcher.run(stop), stop), name="alerts"),

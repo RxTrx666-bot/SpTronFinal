@@ -97,7 +97,7 @@ def test_at_150_notice_with_start_button_then_paused():
         notice = rec.texts[-1]
         assert is_limit_notice(notice) and "150/150" in notice and "PAUSED" in notice
         body = [b for m, b in rec.messages if m == "sendMessage"][-1]
-        assert body["reply_markup"]["inline_keyboard"][0][0] == {"text": "🚀 Let's go", "callback_data": "resume"}
+        assert "reply_markup" not in body  # no button: the start command stays hidden
         assert tracker.paused
 
         # while paused: nothing is detected or alerted
@@ -114,7 +114,7 @@ def test_start_button_resumes_and_counts_again_from_zero():
         await dispatcher.drain()
         assert tracker.paused
         reply = await bot.handle_update(press_start())
-        assert "Let's go! Monitoring started" in reply and "0/3" in reply
+        assert "Monitoring started" in reply and "0/3" in reply
         assert ("answerCallbackQuery", {"callback_query_id": "cb1", "text": ""}) in rec.messages
         assert not tracker.paused and await tracker.count() == 0
         # counting again: 3 more -> paused again with a second notice
@@ -133,13 +133,13 @@ def test_letsgo_command_resumes_and_all_admins_are_told():
         assert tracker.paused
         rec.messages.clear()
         # /start must NOT start monitoring (Telegram sends it when someone opens the bot)
-        assert "waiting" in await bot.handle_update(cmd("/start", chat=2002))
+        assert "paused" in await bot.handle_update(cmd("/start", chat=2002))
         assert tracker.paused
         # /reset only resets the counter, it does not start monitoring either
         assert "Still paused" in await bot.handle_update(cmd("/reset", chat=2002))
         assert tracker.paused
         await bot.handle_update(cmd("/letsgo", chat=2002))
-        resumed = [b["chat_id"] for m, b in rec.messages if m == "sendMessage" and "Let's go!" in b["text"]]
+        resumed = [b["chat_id"] for m, b in rec.messages if m == "sendMessage" and "Monitoring started" in b["text"]]
         assert sorted(resumed) == [1001, 2002]  # both admins informed, no duplicate to the sender
         assert not tracker.paused
         assert "Already running" in await bot.handle_update(cmd("/letsgo"))
@@ -288,9 +288,9 @@ def test_starts_paused_until_letsgo():
         await tracker.pause("startup")
         bot.stats.paused = True
         assert await send_outgoing(processor, 1, 3) == [False] * 3
-        assert "waiting for /letsgo" in await bot.handle_update(cmd("/status"))
+        assert "⏸️ PAUSED" in await bot.handle_update(cmd("/status"))
         reply = await bot.handle_update(cmd("/letsgo"))
-        assert "Let's go! Monitoring started" in reply and "0/150" in reply
+        assert "Monitoring started" in reply and "0/150" in reply
         assert await send_outgoing(processor, 10, 2) == [True, True]
         assert await tracker.count() == 2
     run(go())
@@ -301,7 +301,7 @@ def test_letsgo_works_even_with_counter_disabled():
         _, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="0")
         await tracker.pause("startup")
         reply = await bot.handle_update(cmd("/letsgo"))
-        assert "Let's go! Monitoring started" in reply and "Watching from now" in reply
+        assert "Monitoring started" in reply and "Watching from now" in reply
         assert not tracker.paused
     run(go())
 
@@ -311,4 +311,39 @@ def test_start_paused_default_and_startup_notice():
     s = make_settings()
     assert s.start_paused is True
     text = build_startup_notice(s, [], paused=True)
-    assert text.startswith("⏸️ <b>Bot online – waiting for /letsgo</b>") and "/letsgo" in text
+    assert text.startswith("⏸️ <b>Bot online – paused</b>")
+
+
+def test_letsgo_is_never_shown_anywhere():
+    """The start command is secret: no message, menu entry or button may reveal it."""
+    from app import formatting
+    from app.stats import MonitorStats as MS
+    from app.telegram_bot import COMMANDS
+
+    def hidden(text):
+        lowered = text.lower()
+        return "letsgo" not in lowered and "let's go" not in lowered and "lets go" not in lowered
+
+    async def go():
+        settings, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="2")
+        await tracker.pause("startup")
+        texts = [
+            formatting.build_startup_notice(settings, [], paused=True),
+            formatting.build_startup_notice(settings, [], paused=False),
+            formatting.build_limit_message(2, 2, True),
+            formatting.build_resumed_message(2, 5, True),
+            formatting.build_resumed_message(2, 5, False, still_paused=True),
+            formatting.build_start_message(settings, paused=True),
+            formatting.build_help_message(settings),
+        ]
+        for c in ("/start", "/help", "/status", "/wallet", "/reset"):
+            texts.append(await bot.handle_update(cmd(c)))
+        await bot.handle_update(cmd("/letsgo"))
+        await send_outgoing(processor, 1, 2)  # hits the limit -> notice
+        await dispatcher.drain()
+        texts += rec.texts
+        for t in texts:
+            assert hidden(t), t
+        assert all("reply_markup" not in b for m, b in rec.messages if m == "sendMessage")
+        assert all(name != "letsgo" for name, _ in COMMANDS)  # not in Telegram's command menu
+    run(go())
