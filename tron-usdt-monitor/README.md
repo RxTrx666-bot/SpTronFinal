@@ -98,6 +98,8 @@ Right before each transaction alert, the bot sends:
 ✨ WALLET CREATED
 
 <receiver wallet address>
+
+🖥️ GPU type: RTX 4090 detected
 ```
 Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
@@ -298,7 +300,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 116 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 117 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

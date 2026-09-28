@@ -127,7 +127,8 @@ def test_wallet_created_sent_before_each_alert():
         await dispatcher.load_pending()
         await dispatcher.drain()
         texts = [body["text"] for _, body in rec.sent]
-        assert texts[0] == "✨ <b>WALLET CREATED</b>\n\n<code>" + OTHER + "</code>"  # receiver wallet
+        assert texts[0] == ("✨ <b>WALLET CREATED</b>\n\n<code>" + OTHER + "</code>"  # receiver wallet
+                            "\n\n🖥️ GPU type: <b>RTX 4090</b> detected")
         assert texts[1].startswith("✅ <b>USDT TRANSFER DONE</b>")
         assert "Amount: <b>1.000087 USDT</b>" in texts[1]
         assert len(texts) == 2
@@ -158,4 +159,19 @@ def test_new_icons_and_transfer_done_wording():
                      "💵 Amount: <b>1.000087 USDT</b>", "👤 From:", "🎯 To:", "⛓️ Blockchain Time:",
                      "🤖 Detected By Bot:", "⚡ Detection Latency: 1.000 s", "🔑 Transaction Hash:", "🔍 TRONSCAN:"):
             assert line in text, line
+    run(go())
+
+
+def test_gpu_type_label_configurable():
+    from app.formatting import build_wallet_created_message
+
+    async def go():
+        processor, repo, _, _ = await make_processor(make_settings(ALERT_DIRECTIONS="OUTGOING"))
+        await processor.process(parse_trongrid_trc20_record(
+            trongrid_record(11, sender=WALLET, recipient=OTHER, value="1000000", ts=TS)))
+        tx = await repo.get_transaction(tx_hash(11))
+        assert make_settings().gpu_type == "RTX 4090"
+        assert "🖥️ GPU type: <b>RTX 5090</b> detected" in build_wallet_created_message(
+            tx, make_settings(GPU_TYPE="RTX 5090").gpu_type)
+        assert "GPU" not in build_wallet_created_message(tx, make_settings(GPU_TYPE="").gpu_type)
     run(go())

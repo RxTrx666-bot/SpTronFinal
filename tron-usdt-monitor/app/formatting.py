@@ -198,11 +198,15 @@ def build_status_message(
     return "\n".join(lines)
 
 
-def build_wallet_created_message(tx: StoredTransaction) -> str:
+def build_wallet_created_message(tx: StoredTransaction, gpu_type: str = "") -> str:
     """Sent right before the transaction alert. Shows the counterparty wallet
-    (the receiver for outgoing transfers, the sender for incoming ones)."""
+    (the receiver for outgoing transfers, the sender for incoming ones) and the
+    configured GPU_TYPE label (a fixed text from .env; empty = line omitted)."""
     wallet = tx.sender if tx.direction == "INCOMING" else tx.recipient
-    return "\n".join(["✨ <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"])
+    lines = ["✨ <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"]
+    if gpu_type:
+        lines += ["", f"🖥️ GPU type: <b>{escape(gpu_type)}</b> detected"]
+    return "\n".join(lines)
 
 
 def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
