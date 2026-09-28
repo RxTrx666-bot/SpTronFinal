@@ -95,11 +95,11 @@ Keep the VPS clock synced (`timedatectl set-ntp true`), or latency numbers will 
 ### Wallet-created message
 Right before each transaction alert, the bot sends:
 ```
-🆕 WALLET CREATED
+✨ WALLET CREATED
 
 <receiver wallet address>
 ```
-Then the 🚨 transaction alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
+Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
 ### 150-transaction limit: notice + pause
 Every matching transaction (live, not backfill) is counted. When the count reaches
@@ -112,7 +112,7 @@ Run again
 ```
 and the bot **pauses**: no detection and no alerts. After refilling, press **▶️ Start** (or send
 **`/start`**). Monitoring resumes **from that moment**, skipping whatever happened while paused, and the
-count starts again at 0/150. All admins are told "▶️ Monitoring resumed". `/status` and `/wallet`
+count starts again at 0/150. All admins are told "🔄 Monitoring resumed". `/status` and `/wallet`
 show ⏸️ PAUSED while waiting, and `/status` shows the counter (`🔢 37/150`).
 The count, the pause and the "already notified" flag are stored in the database, so the bot stays
 paused across restarts and never repeats the notice. Changing `TX_LIMIT_THRESHOLD` starts a fresh
@@ -212,7 +212,7 @@ docker compose build
 ```bash
 docker compose up -d
 ```
-You should receive "🟢 Monitor started" in Telegram. Send `/status` to check it.
+You should receive "🚀 Monitor started" in Telegram. Send `/status` to check it.
 
 **8. Check logs**
 ```bash
@@ -298,7 +298,7 @@ app/
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 114 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 116 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

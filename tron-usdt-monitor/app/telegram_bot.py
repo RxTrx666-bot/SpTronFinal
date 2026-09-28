@@ -333,17 +333,17 @@ class TelegramBot:
         chat_id = ((query.get("message") or {}).get("chat") or {}).get("id")
         user_id = (query.get("from") or {}).get("id")
         authorized = self.is_authorized(chat_id) or self.is_authorized(user_id)
+        # An old ▶️ Start button pressed while already running must not reset the count.
+        running = self.limit_tracker is None or not self.limit_tracker.paused
+        answer = "⛔ Unauthorized" if not authorized else ("✅ Already running" if running else "")
         try:
-            await self.client.call("answerCallbackQuery", {
-                "callback_query_id": query.get("id"),
-                "text": "" if authorized else "⛔ Unauthorized",
-            })
+            await self.client.call("answerCallbackQuery", {"callback_query_id": query.get("id"), "text": answer})
         except TelegramApiError:
             pass
         if not authorized:
             log.warning("unauthorized_callback_rejected", extra=kv(chat_id=chat_id, user_id=user_id))
             return None
-        if query.get("data") != RESUME_CALLBACK:
+        if query.get("data") != RESUME_CALLBACK or running:
             return None
         reply = await self.resume_monitoring()
         log.info("command_handled", extra=kv(command="start_button", user_id=user_id))

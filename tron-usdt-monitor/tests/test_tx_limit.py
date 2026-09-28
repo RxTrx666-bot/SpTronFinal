@@ -66,7 +66,7 @@ def is_limit_notice(text):
 
 
 def alerts(texts):
-    return [t for t in texts if "USDT TRANSACTION DETECTED" in t]
+    return [t for t in texts if "USDT TRANSFER DONE" in t]
 
 
 def cmd(text, chat=ADMIN):
@@ -93,7 +93,7 @@ def test_at_150_notice_with_start_button_then_paused():
 
         assert await send_outgoing(processor, 150, 1) == [True]  # the 150th is still alerted
         await dispatcher.drain()
-        assert "USDT TRANSACTION DETECTED" in rec.texts[-2]
+        assert "USDT TRANSFER DONE" in rec.texts[-2]
         notice = rec.texts[-1]
         assert is_limit_notice(notice) and "150/150" in notice and "PAUSED" in notice
         body = [b for m, b in rec.messages if m == "sendMessage"][-1]
@@ -262,4 +262,14 @@ def test_monitor_idles_while_paused_and_reanchors_to_now_on_resume():
         tron.records.append(trongrid_record(3, sender=WALLET, recipient=OTHER, value="1000000", ts=BLOCK_TS + 61_000))
         await mon.poll_once()
         assert await repo.exists(tx_hash(3))
+    run(go())
+
+
+def test_old_start_button_while_running_does_not_reset_count():
+    async def go():
+        _, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="150")
+        await send_outgoing(processor, 1, 7)
+        assert await bot.handle_update(press_start()) is None
+        assert await tracker.count() == 7 and not tracker.paused
+        assert ("answerCallbackQuery", {"callback_query_id": "cb1", "text": "✅ Already running"}) in rec.messages
     run(go())

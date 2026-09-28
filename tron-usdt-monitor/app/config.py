@@ -134,10 +134,10 @@ class Settings:
     @property
     def directions_label(self) -> str:
         if self.outgoing_only:
-            return "OUTGOING only 📤"
+            return "OUTGOING only ⬆️"
         if Direction.OUTGOING not in self.alert_directions:
-            return "INCOMING only 📥"
-        return "INCOMING 📥 + OUTGOING 📤"
+            return "INCOMING only ⬇️"
+        return "INCOMING ⬇️ + OUTGOING ⬆️"
 
     @property
     def tron_api_host(self) -> str:

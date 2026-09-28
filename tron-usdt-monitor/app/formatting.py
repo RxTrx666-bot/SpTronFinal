@@ -9,7 +9,7 @@ from app.database import StoredTransaction
 from app.stats import MonitorStats
 from app.timeutil import format_duration, format_local, format_utc, now_ms
 
-DIRECTION_ICON = {"INCOMING": "📥", "OUTGOING": "📤", "SELF": "🔁"}
+DIRECTION_ICON = {"INCOMING": "⬇️", "OUTGOING": "⬆️", "SELF": "🔁"}
 
 
 def _local_line(ms: int, settings: Settings) -> str:
@@ -23,42 +23,42 @@ def tronscan_link(tx_hash: str, settings: Settings) -> str:
 
 
 def build_alert_message(tx: StoredTransaction, settings: Settings) -> str:
-    header = "🕘 <b>HISTORICAL USDT TRANSACTION (BACKFILL)</b>" if tx.is_backfill else "🚨 <b>USDT TRANSACTION DETECTED</b>"
+    header = "📜 <b>HISTORICAL USDT TRANSFER (BACKFILL)</b>" if tx.is_backfill else "✅ <b>USDT TRANSFER DONE</b>"
     icon = DIRECTION_ICON.get(tx.direction, "")
     link = tronscan_link(tx.tx_hash, settings)
     latency_s = (tx.detected_at_ms - tx.block_timestamp_ms) / 1000
     lines = [
         header,
         "",
-        "Network: TRON",
-        "Token: USDT TRC-20",
+        "🌐 Network: TRON",
+        "💎 Token: USDT TRC-20",
         "",
-        f"Direction: <b>{escape(tx.direction)}</b> {icon}",
+        f"🧭 Direction: <b>{escape(tx.direction)}</b> {icon}",
         "",
-        f"Amount: <b>{escape(tx.amount_usdt)} USDT</b>",
+        f"💵 Amount: <b>{escape(tx.amount_usdt)} USDT</b>",
         "",
-        "From:",
+        "👤 From:",
         f"<code>{escape(tx.sender)}</code>",
         "",
-        "To:",
+        "🎯 To:",
         f"<code>{escape(tx.recipient)}</code>",
         "",
-        "Blockchain Time:",
+        "⛓️ Blockchain Time:",
         f"{format_utc(tx.block_timestamp_ms)}{_local_line(tx.block_timestamp_ms, settings)}",
         "",
-        "Detected By Bot:",
+        "🤖 Detected By Bot:",
         format_utc(tx.detected_at_ms),
     ]
     if not tx.is_backfill:
-        lines.append(f"Detection Latency: {latency_s:.3f} s")
+        lines.append(f"⚡ Detection Latency: {latency_s:.3f} s")
     if tx.block_number is not None:
-        lines += ["", f"Block: {tx.block_number}"]
+        lines += ["", f"🧱 Block: {tx.block_number}"]
     lines += [
         "",
-        "Transaction Hash:",
+        "🔑 Transaction Hash:",
         f"<code>{escape(tx.tx_hash)}</code>",
         "",
-        "TRONSCAN:",
+        "🔍 TRONSCAN:",
         f'<a href="{escape(link)}">{escape(link)}</a>',
     ]
     return "\n".join(lines)
@@ -68,7 +68,7 @@ def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
     active = stats.is_healthy(settings.poll_interval_seconds)
     return "\n".join(
         [
-            "👛 <b>MONITORED WALLET</b>",
+            "💼 <b>MONITORED WALLET</b>",
             "",
             f"<code>{escape(settings.wallet_address)}</code>",
             "",
@@ -137,7 +137,7 @@ def build_status_message(
     )
     last_poll = format_utc(stats.last_poll_ok_ms) if stats.last_poll_ok_ms else "never"
     lines = [
-        "🤖 <b>BOT STATUS</b>",
+        "📊 <b>BOT STATUS</b>",
         "",
         f"Status: {status}",
         "",
@@ -202,7 +202,7 @@ def build_wallet_created_message(tx: StoredTransaction) -> str:
     """Sent right before the transaction alert. Shows the counterparty wallet
     (the receiver for outgoing transfers, the sender for incoming ones)."""
     wallet = tx.sender if tx.direction == "INCOMING" else tx.recipient
-    return "\n".join(["🆕 <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"])
+    return "\n".join(["✨ <b>WALLET CREATED</b>", "", f"<code>{escape(wallet)}</code>"])
 
 
 def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
@@ -216,7 +216,7 @@ def build_limit_message(count: int, threshold: int, paused: bool = True) -> str:
 
 
 def build_resumed_message(threshold: int, cycle: int, was_paused: bool) -> str:
-    head = "▶️ <b>Monitoring resumed</b>" if was_paused else "🔄 <b>Counter reset</b>"
+    head = "🔄 <b>Monitoring resumed</b>" if was_paused else "♻️ <b>Counter reset</b>"
     return "\n".join(
         [head, "", f"Transaction Counter: 🔢 0/{threshold}", f"Cycle #{cycle} started. Counting from now."]
     )
@@ -225,7 +225,7 @@ def build_resumed_message(threshold: int, cycle: int, was_paused: bool) -> str:
 def build_help_message(settings: Settings) -> str:
     return "\n".join(
         [
-            "ℹ️ <b>TRON USDT MONITOR</b>",
+            "📘 <b>TRON USDT MONITOR</b>",
             "",
             f"Watches <code>{escape(settings.wallet_address)}</code> for USDT TRC-20 transfers "
             f"between {settings.min_usdt} and {settings.max_usdt} USDT (inclusive). Direction: {settings.directions_label}.",
@@ -240,14 +240,14 @@ def build_help_message(settings: Settings) -> str:
 
 
 def build_start_message(settings: Settings) -> str:
-    return "👋 <b>TRON USDT Monitor is running.</b>\n\nAlerts are sent here automatically.\n\n" + "\n".join(
+    return "🤝 <b>TRON USDT Monitor is running.</b>\n\nAlerts are sent here automatically.\n\n" + "\n".join(
         build_help_message(settings).split("\n")[4:]
     )
 
 
 def build_startup_notice(settings: Settings, warnings: list[str]) -> str:
     lines = [
-        "🟢 <b>Monitor started</b>",
+        "🚀 <b>Monitor started</b>",
         "",
         f"Wallet: <code>{escape(settings.wallet_address)}</code>",
         f"Range: {settings.min_usdt} – {settings.max_usdt} USDT",
