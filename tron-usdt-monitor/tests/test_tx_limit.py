@@ -97,7 +97,7 @@ def test_at_150_notice_with_start_button_then_paused():
         notice = rec.texts[-1]
         assert is_limit_notice(notice) and "150/150" in notice and "PAUSED" in notice
         body = [b for m, b in rec.messages if m == "sendMessage"][-1]
-        assert body["reply_markup"]["inline_keyboard"][0][0] == {"text": "▶️ Start", "callback_data": "resume"}
+        assert body["reply_markup"]["inline_keyboard"][0][0] == {"text": "🚀 Let's go", "callback_data": "resume"}
         assert tracker.paused
 
         # while paused: nothing is detected or alerted
@@ -114,7 +114,7 @@ def test_start_button_resumes_and_counts_again_from_zero():
         await dispatcher.drain()
         assert tracker.paused
         reply = await bot.handle_update(press_start())
-        assert "Monitoring resumed" in reply and "0/3" in reply
+        assert "Let's go! Monitoring started" in reply and "0/3" in reply
         assert ("answerCallbackQuery", {"callback_query_id": "cb1", "text": ""}) in rec.messages
         assert not tracker.paused and await tracker.count() == 0
         # counting again: 3 more -> paused again with a second notice
@@ -124,7 +124,7 @@ def test_start_button_resumes_and_counts_again_from_zero():
     run(go())
 
 
-def test_start_command_resumes_and_all_admins_are_told():
+def test_letsgo_command_resumes_and_all_admins_are_told():
     async def go():
         ids = "1001,2002"
         _, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="2", TELEGRAM_ADMIN_CHAT_ID=ids)
@@ -132,11 +132,17 @@ def test_start_command_resumes_and_all_admins_are_told():
         await dispatcher.drain()
         assert tracker.paused
         rec.messages.clear()
-        await bot.handle_update(cmd("/start", chat=2002))
-        resumed = [b["chat_id"] for m, b in rec.messages if m == "sendMessage" and "resumed" in b["text"]]
+        # /start must NOT start monitoring (Telegram sends it when someone opens the bot)
+        assert "waiting" in await bot.handle_update(cmd("/start", chat=2002))
+        assert tracker.paused
+        # /reset only resets the counter, it does not start monitoring either
+        assert "Still paused" in await bot.handle_update(cmd("/reset", chat=2002))
+        assert tracker.paused
+        await bot.handle_update(cmd("/letsgo", chat=2002))
+        resumed = [b["chat_id"] for m, b in rec.messages if m == "sendMessage" and "Let's go!" in b["text"]]
         assert sorted(resumed) == [1001, 2002]  # both admins informed, no duplicate to the sender
         assert not tracker.paused
-        # /start when NOT paused just shows the intro
+        assert "Already running" in await bot.handle_update(cmd("/letsgo"))
         assert "running" in await bot.handle_update(cmd("/start"))
     run(go())
 
@@ -147,7 +153,7 @@ def test_unauthorized_cannot_press_start():
         await send_outgoing(processor, 1, 1)
         assert tracker.paused
         assert await bot.handle_update(press_start(chat=999)) is None
-        assert await bot.handle_update(cmd("/start", chat=999)) is None
+        assert await bot.handle_update(cmd("/letsgo", chat=999)) is None
         assert tracker.paused
     run(go())
 
@@ -273,3 +279,36 @@ def test_old_start_button_while_running_does_not_reset_count():
         assert await tracker.count() == 7 and not tracker.paused
         assert ("answerCallbackQuery", {"callback_query_id": "cb1", "text": "✅ Already running"}) in rec.messages
     run(go())
+
+
+def test_starts_paused_until_letsgo():
+    """START_PAUSED: after (re)start nothing is detected until /letsgo; then counting from 0."""
+    async def go():
+        _, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="150")
+        await tracker.pause("startup")
+        bot.stats.paused = True
+        assert await send_outgoing(processor, 1, 3) == [False] * 3
+        assert "waiting for /letsgo" in await bot.handle_update(cmd("/status"))
+        reply = await bot.handle_update(cmd("/letsgo"))
+        assert "Let's go! Monitoring started" in reply and "0/150" in reply
+        assert await send_outgoing(processor, 10, 2) == [True, True]
+        assert await tracker.count() == 2
+    run(go())
+
+
+def test_letsgo_works_even_with_counter_disabled():
+    async def go():
+        _, repo, dispatcher, tracker, processor, rec, bot = await setup(threshold="0")
+        await tracker.pause("startup")
+        reply = await bot.handle_update(cmd("/letsgo"))
+        assert "Let's go! Monitoring started" in reply and "Watching from now" in reply
+        assert not tracker.paused
+    run(go())
+
+
+def test_start_paused_default_and_startup_notice():
+    from app.formatting import build_startup_notice
+    s = make_settings()
+    assert s.start_paused is True
+    text = build_startup_notice(s, [], paused=True)
+    assert text.startswith("⏸️ <b>Bot online – waiting for /letsgo</b>") and "/letsgo" in text

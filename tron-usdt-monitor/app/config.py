@@ -87,6 +87,7 @@ class Settings:
     alert_directions: frozenset[Direction]
     tx_limit_threshold: int
     pause_on_limit: bool
+    start_paused: bool
     wallet_created_notice: bool
     gpu_type: str
     # Monitoring behaviour
@@ -233,6 +234,7 @@ class Settings:
             alert_directions=frozenset(directions),
             tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 150, 0),
             pause_on_limit=e.bool("PAUSE_ON_LIMIT", True),
+            start_paused=e.bool("START_PAUSED", True),
             wallet_created_notice=e.bool("WALLET_CREATED_NOTICE", True),
             gpu_type=e.env.get("GPU_TYPE", "RTX 4090").strip(),
             monitor_mode=mode,
