@@ -88,6 +88,7 @@ class Settings:
     tx_limit_threshold: int
     pause_on_limit: bool
     wallet_created_notice: bool
+    gpu_type: str
     # Monitoring behaviour
     monitor_mode: str
     poll_interval_seconds: float
@@ -233,6 +234,7 @@ class Settings:
             tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 150, 0),
             pause_on_limit=e.bool("PAUSE_ON_LIMIT", True),
             wallet_created_notice=e.bool("WALLET_CREATED_NOTICE", True),
+            gpu_type=e.env.get("GPU_TYPE", "RTX 4090").strip(),
             monitor_mode=mode,
             poll_interval_seconds=e.float("POLL_INTERVAL_SECONDS", 2.0, 0.2),
             confirmed_only=e.bool("CONFIRMED_ONLY", False),

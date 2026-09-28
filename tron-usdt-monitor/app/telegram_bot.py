@@ -232,7 +232,7 @@ class AlertDispatcher:
             return False
         if self.settings.wallet_created_notice:
             # "Wallet created" goes first, then the transaction alert.
-            if not await self._broadcast(formatting.build_wallet_created_message(tx), stop,
+            if not await self._broadcast(formatting.build_wallet_created_message(tx, self.settings.gpu_type), stop,
                                          label=f"wallet_created_{tx_hash[:12]}"):
                 return False
             log.info("wallet_created_notice_sent", extra=kv(tx_hash=tx_hash))
