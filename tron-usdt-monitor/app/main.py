@@ -77,7 +77,7 @@ async def run(settings: Settings) -> int:
     telegram = TelegramClient(settings.telegram_bot_token, api_base=settings.telegram_api_url)
     stats = MonitorStats()
     dispatcher = AlertDispatcher(settings, telegram, repo, stats)
-    limit_tracker = TxLimitTracker(repo, settings.tx_limit_threshold, dispatcher)
+    limit_tracker = TxLimitTracker(repo, settings.tx_limit_threshold, dispatcher, settings.pause_on_limit)
     dispatcher.limit_tracker = limit_tracker
     bot = TelegramBot(settings, telegram, repo, stats, tron, limit_tracker)
     processor = TransactionProcessor(
@@ -111,6 +111,8 @@ async def run(settings: Settings) -> int:
             await bot.notify_admin(f"❌ Monitor NOT started:\n{exc}")
             return 2
 
+        await limit_tracker.load()
+        stats.paused = limit_tracker.paused
         await dispatcher.load_pending()
         await limit_tracker.check()  # re-send the notice if a crash happened before delivery
         if settings.notify_on_startup:

@@ -86,6 +86,7 @@ class Settings:
     max_raw: int
     alert_directions: frozenset[Direction]
     tx_limit_threshold: int
+    pause_on_limit: bool
     wallet_created_notice: bool
     # Monitoring behaviour
     monitor_mode: str
@@ -229,7 +230,8 @@ class Settings:
             min_raw=min_raw,
             max_raw=max_raw,
             alert_directions=frozenset(directions),
-            tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 80, 0),
+            tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 150, 0),
+            pause_on_limit=e.bool("PAUSE_ON_LIMIT", True),
             wallet_created_notice=e.bool("WALLET_CREATED_NOTICE", True),
             monitor_mode=mode,
             poll_interval_seconds=e.float("POLL_INTERVAL_SECONDS", 2.0, 0.2),

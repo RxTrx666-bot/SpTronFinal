@@ -30,7 +30,7 @@ NOTICE_PREFIX = "notice:"
 log = logging.getLogger(__name__)
 
 COMMANDS = [
-    ("start", "Start / show intro"),
+    ("start", "Start / resume monitoring after refilling"),
     ("status", "Monitoring status and latency"),
     ("wallet", "Monitored wallet and amount range"),
     ("reset", "Restart the transaction counter (after refilling)"),
@@ -88,11 +88,18 @@ class TelegramClient:
         raise TelegramApiError(f"{method}: HTTP {code} {description}", retryable=code >= 500 or code == 409,
                                description=description)
 
-    async def send_message(self, chat_id: int, text: str, parse_mode: str | None = "HTML") -> Any:
+    async def send_message(self, chat_id: int, text: str, parse_mode: str | None = "HTML",
+                           reply_markup: dict[str, Any] | None = None) -> Any:
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
         return await self.call("sendMessage", payload)
+
+
+RESUME_CALLBACK = "resume"
+START_BUTTON = {"inline_keyboard": [[{"text": "▶️ Start", "callback_data": RESUME_CALLBACK}]]}
 
 
 class AlertDispatcher:
@@ -161,14 +168,16 @@ class AlertDispatcher:
         tracker = self.limit_tracker
         if tracker is None or await tracker.already_notified(cycle) or await tracker.cycle() != cycle:
             return False
-        text = formatting.build_limit_message(await tracker.count(), tracker.threshold)
-        if await self._broadcast(text, stop, label=f"limit_notice_cycle_{cycle}"):
+        text = formatting.build_limit_message(await tracker.count(), tracker.threshold, tracker.paused)
+        markup = START_BUTTON if tracker.paused else None
+        if await self._broadcast(text, stop, label=f"limit_notice_cycle_{cycle}", reply_markup=markup):
             await tracker.mark_notified(cycle)
             log.info("tx_limit_notice_sent", extra=kv(cycle=cycle))
             return True
         return False
 
-    async def _broadcast(self, text: str, stop: asyncio.Event, label: str) -> bool:
+    async def _broadcast(self, text: str, stop: asyncio.Event, label: str,
+                         reply_markup: dict[str, Any] | None = None) -> bool:
         """Send ``text`` to every admin chat, retrying until delivered.
 
         A chat that fails permanently (e.g. the person never pressed Start, or blocked
@@ -187,7 +196,8 @@ class AlertDispatcher:
             delay = 0.0
             for chat_id in pending:
                 try:
-                    await self.client.send_message(chat_id, text, parse_mode=parse_mode)
+                    await self.client.send_message(chat_id, text, parse_mode=parse_mode,
+                                                   reply_markup=reply_markup)
                     delivered += 1
                 except TelegramApiError as exc:
                     self.stats.alert_failures += 1
@@ -299,7 +309,7 @@ class TelegramBot:
         backoff = 1.0
         while not stop.is_set():
             try:
-                payload: dict[str, Any] = {"timeout": 25, "allowed_updates": ["message"]}
+                payload: dict[str, Any] = {"timeout": 25, "allowed_updates": ["message", "callback_query"]}
                 if self._offset is not None:
                     payload["offset"] = self._offset
                 updates = await self.client.call("getUpdates", payload, timeout=35)
@@ -318,7 +328,41 @@ class TelegramBot:
                 await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 60.0)
 
+    async def handle_callback(self, query: dict[str, Any]) -> str | None:
+        """Inline button presses (▶️ Start under the limit notice)."""
+        chat_id = ((query.get("message") or {}).get("chat") or {}).get("id")
+        user_id = (query.get("from") or {}).get("id")
+        authorized = self.is_authorized(chat_id) or self.is_authorized(user_id)
+        try:
+            await self.client.call("answerCallbackQuery", {
+                "callback_query_id": query.get("id"),
+                "text": "" if authorized else "⛔ Unauthorized",
+            })
+        except TelegramApiError:
+            pass
+        if not authorized:
+            log.warning("unauthorized_callback_rejected", extra=kv(chat_id=chat_id, user_id=user_id))
+            return None
+        if query.get("data") != RESUME_CALLBACK:
+            return None
+        reply = await self.resume_monitoring()
+        log.info("command_handled", extra=kv(command="start_button", user_id=user_id))
+        return reply
+
+    async def resume_monitoring(self) -> str:
+        """▶️ Start / /start: resume after the limit pause and start a new count. Tells every admin."""
+        tracker = self.limit_tracker
+        if tracker is None or not tracker.enabled:
+            return formatting.build_start_message(self.settings)
+        was_paused, cycle = await tracker.resume()
+        self.stats.paused = False
+        text = formatting.build_resumed_message(tracker.threshold, cycle, was_paused)
+        await self.notify_admin(text)
+        return text
+
     async def handle_update(self, update: dict[str, Any]) -> str | None:
+        if isinstance(update.get("callback_query"), dict):
+            return await self.handle_callback(update["callback_query"])
         message = update.get("message") or {}
         text = message.get("text")
         chat_id = (message.get("chat") or {}).get("id")
@@ -333,6 +377,11 @@ class TelegramBot:
             except Exception:
                 pass
             return None
+        if command == "/start" and self.limit_tracker is not None and self.limit_tracker.paused:
+            # resume_monitoring() already notifies every admin chat (including this one)
+            reply = await self.resume_monitoring()
+            log.info("command_handled", extra=kv(command=command))
+            return reply
         reply = await self.render_command(command)
         if reply is None:
             reply = "Unknown command. Use /help."
@@ -350,12 +399,9 @@ class TelegramBot:
         if command == "/reset":
             if self.limit_tracker is None or not self.limit_tracker.enabled:
                 return "Transaction counter is disabled (TX_LIMIT_THRESHOLD=0)."
-            cycle = await self.limit_tracker.reset()
-            return (
-                "🔄 <b>Counter reset</b>\n\n"
-                f"Transaction Counter: 🔢 0/{self.limit_tracker.threshold}\n"
-                f"Cycle #{cycle} started. Monitoring continues."
-            )
+            was_paused, cycle = await self.limit_tracker.resume()
+            self.stats.paused = False
+            return formatting.build_resumed_message(self.limit_tracker.threshold, cycle, was_paused)
         if command == "/status":
             return formatting.build_status_message(
                 self.settings,

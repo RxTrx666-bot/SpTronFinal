@@ -77,6 +77,9 @@ class TransactionProcessor:
         if not decision.matched or decision.direction is None:
             log.debug("transfer_ignored", extra=kv(tx_hash=transfer.tx_hash, reason=decision.reason))
             return False
+        if self.limit_tracker is not None and self.limit_tracker.paused and not backfill:
+            log.info("transfer_ignored_paused", extra=kv(tx_hash=transfer.tx_hash))
+            return False
         if await self.repo.exists(transfer.tx_hash):
             log.info("duplicate_transaction_ignored", extra=kv(tx_hash=transfer.tx_hash))
             return False
@@ -150,6 +153,11 @@ class BaseMonitor:
         self._sleep = sleep
         self._heartbeat = heartbeat
         stats.mode = settings.monitor_mode
+        self._resume_generation = 0
+
+    async def reanchor_now(self) -> None:
+        """After a pause, continue from the current chain position (skip the paused period)."""
+        raise NotImplementedError
 
     async def initialize(self) -> None:
         raise NotImplementedError
@@ -176,6 +184,20 @@ class BaseMonitor:
         backoff = 1.0
         while not stop.is_set():
             try:
+                tracker = self.processor.limit_tracker
+                if tracker is not None and tracker.paused:
+                    # Paused after the transaction limit: no polling, no alerts until ▶️ Start.
+                    self.stats.paused = True
+                    if self._heartbeat:
+                        self._heartbeat()
+                    await self._wait(stop, max(1.0, self.settings.poll_interval_seconds))
+                    continue
+                self.stats.paused = False
+                if tracker is not None and tracker.resume_generation != self._resume_generation:
+                    generation = tracker.resume_generation
+                    await self.reanchor_now()  # may raise -> retried next loop
+                    self._resume_generation = generation
+                    self.stats.initialized = False
                 if not self.stats.initialized:
                     await self.initialize()
                     self.stats.initialized = True
@@ -240,6 +262,14 @@ class AccountMonitor(BaseMonitor):
         except TronApiError as exc:
             log.warning("head_block_unavailable_using_local_clock", extra=kv(error=str(exc)))
             return now_ms()
+
+    async def reanchor_now(self) -> None:
+        start = await self._chain_now_ms()
+        await self.repo.set_state(STATE_ACCOUNT_FLOOR, str(start))
+        await self.repo.set_state(STATE_ACCOUNT_CURSOR, str(start))
+        self._seen.clear()
+        self._pending_since.clear()
+        log.info("monitoring_point_reanchored_after_resume", extra=kv(from_time=format_utc(start)))
 
     async def initialize(self) -> None:
         cursor = await self.repo.get_state(STATE_ACCOUNT_CURSOR)
@@ -385,6 +415,11 @@ class AccountMonitor(BaseMonitor):
 
 class BlockMonitor(BaseMonitor):
     """Scans every new block's receipts and decodes USDT Transfer event logs."""
+
+    async def reanchor_now(self) -> None:
+        head, head_ts = await self.client.get_head_block(solidity=self.settings.confirmed_only)
+        await self.repo.set_state(STATE_LAST_BLOCK, str(head))
+        log.info("monitoring_point_reanchored_after_resume", extra=kv(block=head, from_time=format_utc(head_ts)))
 
     async def initialize(self) -> None:
         last = await self.repo.get_state(STATE_LAST_BLOCK)
