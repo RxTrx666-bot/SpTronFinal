@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # A transfer only counts as the LARGE side of a pattern if it is at least this
     # big (in USDT).  Test amounts are still learned per relationship.
     min_large_amount_usdt: Decimal = Decimal("30000")
+    # Allowed window for TEST transfers (USDT).  Inside this window each
+    # relationship still learns its own test range.
+    min_test_amount_usdt: Decimal = Decimal("0.5")
+    max_test_amount_usdt: Decimal = Decimal("2000")
     max_followup_hours: float = 168.0
     min_pattern_confidence: ConfidenceLevel = ConfidenceLevel.HIGH
     confidence_high_threshold: float = 0.75
@@ -187,6 +191,14 @@ class Settings(BaseSettings):
     @property
     def min_large_raw(self) -> int:
         return int(self.min_large_amount_usdt.scaleb(self.usdt_decimals).to_integral_value())
+
+    @property
+    def min_test_raw(self) -> int:
+        return int(self.min_test_amount_usdt.scaleb(self.usdt_decimals).to_integral_value())
+
+    @property
+    def max_test_raw(self) -> int:
+        return int(self.max_test_amount_usdt.scaleb(self.usdt_decimals).to_integral_value())
 
     @property
     def dust_floor_raw(self) -> int:

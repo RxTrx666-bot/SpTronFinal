@@ -130,6 +130,7 @@ def detect_sequences(
     max_followup: timedelta,
     dust_floor_raw: int = 0,
     min_large_raw: int = 0,
+    max_test_raw: int | None = None,
 ) -> list[DetectedSequence]:
     """Pair each transfer with the most recent unused earlier transfer of the same
     relationship that it exceeds by ``ratio`` within ``max_followup``.
@@ -151,6 +152,8 @@ def detect_sequences(
             if i in used_as_test or i in used_as_large:
                 continue
             if t.amount_raw < max(dust_floor_raw, 1):
+                continue
+            if max_test_raw is not None and t.amount_raw > max_test_raw:
                 continue
             if is_substantially_larger(x.amount_raw, t.amount_raw, ratio):
                 used_as_test.add(i)
@@ -278,9 +281,9 @@ def build_model(
     # ---- learned test band used for live matching (relative) ----------------
     factor = _fraction(settings.test_match_factor)
     low = math.ceil(Fraction(test_min) / factor)
-    low = max(low, settings.dust_floor_raw, 1)
+    low = max(low, settings.dust_floor_raw, settings.min_test_raw, 1)
     high = math.floor(Fraction(test_max) * factor)
-    high = min(high, math.floor(Fraction(large_min) / ratio))
+    high = min(high, math.floor(Fraction(large_min) / ratio), settings.max_test_raw)
 
     # ---- success rate & relationship consistency ----------------------------
     large_ids = {s.large.id for s in sequences}
@@ -395,8 +398,9 @@ def analyze_history(
         history,
         ratio=settings.ratio_fraction,
         max_followup=timedelta(hours=settings.max_followup_hours),
-        dust_floor_raw=settings.dust_floor_raw,
+        dust_floor_raw=max(settings.dust_floor_raw, settings.min_test_raw),
         min_large_raw=settings.min_large_raw,
+        max_test_raw=settings.max_test_raw,
     )
     return build_model(sender, recipient, history, seqs, now, settings)
 
