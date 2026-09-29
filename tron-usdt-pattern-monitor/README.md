@@ -444,6 +444,7 @@ All settings are environment variables (see `.env.example`). The most important 
 | `PATTERN_HALF_LIFE_DAYS` | 30 | Recency weighting (decay) |
 | `PATTERN_EXPIRY_DAYS` | 60 | No sequence for this long → EXPIRED |
 | `NOTIFICATION_MODE` | watchlist | `watchlist`: only a message when a relationship is added to the watchlist (plus the backfill summary); other alerts are detected and stored but not sent. `all`: every alert type |
+| `NOTIFICATION_TITLE` | 🏦 OKX wallet detected | Title line added at the top of every notification (empty = none). Fixed text only; the bot does not check which exchange a wallet belongs to |
 | `ALERT_MAX_TX_AGE_MINUTES` | 60 | Do not raise live alerts for older transfers (for example after long downtime) |
 | `FLOOD_MAX_TESTS_PER_HOUR` | 6 | Automatic PAUSE threshold |
 | `RETENTION_DAYS` | 150 | Delete stored transfers older than this (0 = keep all) |

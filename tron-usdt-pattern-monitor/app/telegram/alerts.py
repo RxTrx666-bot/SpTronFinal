@@ -117,6 +117,10 @@ class AlertDispatcher:
             alert.status = AlertStatus.SENDING.value
             alert.attempts += 1
             alert_id, text, attempts = alert.id, alert.message_text, alert.attempts
+        if self.s.notification_title.strip():
+            import html as _html
+
+            text = f"<b>{_html.escape(self.s.notification_title.strip())}</b>\n{text}"
         start = _utcnow()
         try:
             message_id = await self.sink.send(text)

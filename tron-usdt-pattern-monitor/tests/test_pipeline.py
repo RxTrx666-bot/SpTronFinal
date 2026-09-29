@@ -390,3 +390,16 @@ async def test_watchlist_mode_sends_only_the_final_result(make_harness):
     assert kinds(h.rec.messages) == ["ACTIVATED"]
     assert "NEW WATCHLIST ENTRY" in h.rec.messages[0]
     assert (await h.entry("A", "B")).successful_sequences == 4  # learning continued silently
+
+
+async def test_notification_title_on_every_message(make_harness):
+    h = await make_harness(notification_title="🏦 OKX wallet detected")
+    await h.app.send_system("t", "hello")
+    for amount, minutes in ((5, 1), (20_000, 20), (5, 600), (30_000, 20), (7, 600), (40_000, 20)):
+        h.clock.advance(minutes=minutes)
+        h.ev("A", "B", amount, h.clock.now())
+        await h.poll()
+    assert len(h.rec.messages) >= 3
+    for m in h.rec.messages:
+        assert m.startswith("<b>🏦 OKX wallet detected</b>\n")
+        assert_telegram_html(m)
