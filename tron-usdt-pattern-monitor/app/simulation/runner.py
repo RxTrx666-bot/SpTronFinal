@@ -102,6 +102,7 @@ def _settings(database_url: str, **kw) -> Settings:
         send_startup_message=False,
         notification_mode="all",
         min_large_amount_usdt=5000,
+        max_test_amount_usdt=100000,
         enable_unconfirmed=True,
         telegram_bot_token="",
         telegram_chat_id="",

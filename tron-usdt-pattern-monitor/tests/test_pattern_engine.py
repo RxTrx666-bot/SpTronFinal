@@ -14,7 +14,7 @@ from app.domain import ConfidenceLevel, WatchlistStatus
 from app.watchlist.model import WatchlistSnapshot
 
 NOW = datetime(2026, 9, 23, 12, tzinfo=timezone.utc)
-S = Settings(_env_file=None, min_large_amount_usdt=5000)
+S = Settings(_env_file=None, min_large_amount_usdt=5000, max_test_amount_usdt=100000)
 U = 1_000_000  # 1 USDT in raw units
 
 
@@ -241,3 +241,14 @@ def test_default_min_large_is_30k():
     assert d.min_large_raw == 30_000 * U
     assert analyze_history("S", "R", hist([(5, 20_000), (5, 25_000), (10, 29_000)]), NOW, d) is None
     assert analyze_history("S", "R", hist([(5, 30_000), (5, 40_000), (10, 50_000)]), NOW, d).qualifies_active
+
+
+def test_default_test_window_is_0_5_to_2000():
+    d = Settings(_env_file=None)
+    assert (d.min_test_raw, d.max_test_raw) == (500_000, 2_000 * U)
+    ok = analyze_history("S", "R", hist([(1500, 60_000), (1800, 70_000), (1600, 65_000)]), NOW, d)
+    assert ok.qualifies_active and ok.match_high_raw <= 2_000 * U
+    assert analyze_history("S", "R", hist([(2500, 60_000), (2600, 70_000), (3000, 65_000)]), NOW, d) is None
+    assert analyze_history("S", "R", hist([("0.2", 60_000), ("0.3", 70_000), ("0.2", 65_000)]), NOW, d) is None
+    small = analyze_history("S", "R", hist([(1, 60_000), (1, 70_000), ("0.8", 65_000)]), NOW, d)
+    assert small.qualifies_active and small.match_low_raw >= 500_000
