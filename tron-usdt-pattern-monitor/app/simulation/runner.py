@@ -101,6 +101,7 @@ def _settings(database_url: str, **kw) -> Settings:
         backfill_window_seconds=3600,
         send_startup_message=False,
         notification_mode="all",
+        min_large_amount_usdt=5000,
         enable_unconfirmed=True,
         telegram_bot_token="",
         telegram_chat_id="",

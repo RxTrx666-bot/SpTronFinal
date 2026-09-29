@@ -14,7 +14,7 @@ from app.domain import ConfidenceLevel, WatchlistStatus
 from app.watchlist.model import WatchlistSnapshot
 
 NOW = datetime(2026, 9, 23, 12, tzinfo=timezone.utc)
-S = Settings(_env_file=None)
+S = Settings(_env_file=None, min_large_amount_usdt=5000)
 U = 1_000_000  # 1 USDT in raw units
 
 
@@ -234,3 +234,10 @@ def test_followup_below_min_large_is_ignored():
     at = NOW + timedelta(minutes=5)
     assert select_followup([TE()], 4_000 * U, at, S.ratio_fraction, S.min_large_raw) is None
     assert select_followup([TE()], 5_000 * U, at, S.ratio_fraction, S.min_large_raw) is not None
+
+
+def test_default_min_large_is_30k():
+    d = Settings(_env_file=None)
+    assert d.min_large_raw == 30_000 * U
+    assert analyze_history("S", "R", hist([(5, 20_000), (5, 25_000), (10, 29_000)]), NOW, d) is None
+    assert analyze_history("S", "R", hist([(5, 30_000), (5, 40_000), (10, 50_000)]), NOW, d).qualifies_active
