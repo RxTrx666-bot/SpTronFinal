@@ -31,6 +31,7 @@ def make_settings(db_url: str, **kw) -> Settings:
         send_startup_message=False,
         notification_mode="all",
         min_large_amount_usdt=5000,
+        notification_title="",
         telegram_bot_token="",
         telegram_chat_id="",
         heartbeat_file="/tmp/tron-usdt-test.heartbeat",

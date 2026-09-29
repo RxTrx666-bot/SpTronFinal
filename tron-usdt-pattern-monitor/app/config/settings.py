@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     #              but not sent.
     # "all":       send every alert type.
     notification_mode: str = "watchlist"
+    # Title line added at the top of every notification (empty = none).
+    notification_title: str = "🏦 OKX wallet detected"
 
     # --------------------------------------------------------- Maintenance
     analysis_workers: int = 2
