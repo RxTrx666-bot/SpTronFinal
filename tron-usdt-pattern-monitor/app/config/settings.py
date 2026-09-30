@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # Allowed window for TEST transfers (USDT).  Inside this window each
     # relationship still learns its own test range.
     min_test_amount_usdt: Decimal = Decimal("0.5")
-    max_test_amount_usdt: Decimal = Decimal("2000")
+    max_test_amount_usdt: Decimal = Decimal("1000")
     max_followup_hours: float = 168.0
     min_pattern_confidence: ConfidenceLevel = ConfidenceLevel.HIGH
     confidence_high_threshold: float = 0.75
