@@ -15,7 +15,7 @@ from app import __version__
 from app.config import ConfigError, Settings
 from app.database import create_repository
 from app.filters import TransferFilter
-from app.formatting import build_startup_notice
+from app.formatting import build_resumed_message, build_startup_notice
 from app.logger import kv, setup_logging
 from app.startup_checks import StartupCheckError, run_startup_checks
 from app.stats import MonitorStats
@@ -113,6 +113,14 @@ async def run(settings: Settings) -> int:
             return 2
 
         await limit_tracker.load()
+
+        async def on_resume(cycle: int) -> None:
+            stats.paused = False
+            await bot.notify_admin(
+                build_resumed_message(limit_tracker.threshold, cycle, was_paused=True)
+            )
+
+        limit_tracker.on_resume = on_resume
         if settings.start_paused:
             await limit_tracker.pause("startup (START_PAUSED=true)")
         stats.paused = limit_tracker.paused

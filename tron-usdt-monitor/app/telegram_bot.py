@@ -335,7 +335,9 @@ class TelegramBot:
         user_id = (query.get("from") or {}).get("id")
         authorized = self.is_authorized(chat_id) or self.is_authorized(user_id)
         # An old 🚀 Let's go button pressed while already running must not reset the count.
-        running = self.limit_tracker is None or not self.limit_tracker.paused
+        # With ALLOW_TELEGRAM_START=false buttons never start monitoring (server command only).
+        running = (self.limit_tracker is None or not self.limit_tracker.paused
+                   or not self.settings.allow_telegram_start)
         answer = "⛔ Unauthorized" if not authorized else ("✅ Already running" if running else "")
         try:
             await self.client.call("answerCallbackQuery", {"callback_query_id": query.get("id"), "text": answer})
@@ -378,7 +380,7 @@ class TelegramBot:
             except Exception:
                 pass
             return None
-        if command == "/letsgo":
+        if command == "/letsgo" and self.settings.allow_telegram_start:
             if self.limit_tracker is not None and self.limit_tracker.paused:
                 # resume_monitoring() already notifies every admin chat (including this one)
                 reply = await self.resume_monitoring()
