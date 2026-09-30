@@ -243,12 +243,12 @@ def test_default_min_large_is_30k():
     assert analyze_history("S", "R", hist([(5, 30_000), (5, 40_000), (10, 50_000)]), NOW, d).qualifies_active
 
 
-def test_default_test_window_is_0_5_to_2000():
+def test_default_test_window_is_0_5_to_1000():
     d = Settings(_env_file=None)
-    assert (d.min_test_raw, d.max_test_raw) == (500_000, 2_000 * U)
-    ok = analyze_history("S", "R", hist([(1500, 60_000), (1800, 70_000), (1600, 65_000)]), NOW, d)
-    assert ok.qualifies_active and ok.match_high_raw <= 2_000 * U
-    assert analyze_history("S", "R", hist([(2500, 60_000), (2600, 70_000), (3000, 65_000)]), NOW, d) is None
+    assert (d.min_test_raw, d.max_test_raw) == (500_000, 1_000 * U)
+    ok = analyze_history("S", "R", hist([(800, 60_000), (900, 70_000), (1000, 65_000)]), NOW, d)
+    assert ok.qualifies_active and ok.match_high_raw <= 1_000 * U
+    assert analyze_history("S", "R", hist([(1100, 60_000), (1500, 70_000), (2000, 65_000)]), NOW, d) is None
     assert analyze_history("S", "R", hist([("0.2", 60_000), ("0.3", 70_000), ("0.2", 65_000)]), NOW, d) is None
     small = analyze_history("S", "R", hist([(1, 60_000), (1, 70_000), ("0.8", 65_000)]), NOW, d)
     assert small.qualifies_active and small.match_low_raw >= 500_000

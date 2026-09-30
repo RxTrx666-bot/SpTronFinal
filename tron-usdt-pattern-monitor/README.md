@@ -437,7 +437,7 @@ All settings are environment variables (see `.env.example`). The most important 
 | `MIN_SUCCESSFUL_SEQUENCES` | 3 | Consistent sequences needed for ACTIVE |
 | `MIN_LARGE_TO_TEST_RATIO` | 10 | "Substantially larger" = at least this many × the preceding transfer (not a test amount!) |
 | `MIN_LARGE_AMOUNT_USDT` | 30000 | A transfer only counts as the LARGE side of a pattern (and as a follow-up) if it is at least this many USDT |
-| `MIN_TEST_AMOUNT_USDT` / `MAX_TEST_AMOUNT_USDT` | 0.5 / 2000 | Test transfers must fall in this window; inside it each relationship still learns its own test range |
+| `MIN_TEST_AMOUNT_USDT` / `MAX_TEST_AMOUNT_USDT` | 0.5 / 1000 | Test transfers must fall in this window; inside it each relationship still learns its own test range |
 | `MAX_FOLLOWUP_HOURS` | 168 | Maximum test → large gap |
 | `MIN_PATTERN_CONFIDENCE` | HIGH | LOW / MEDIUM / HIGH needed for ACTIVE |
 | `MIN_SUCCESS_RATE` | 0.5 | Share of test-like transfers that must have led to a large one |
