@@ -103,25 +103,23 @@ Right before each transaction alert, the bot sends:
 ```
 Then the ✅ USDT TRANSFER DONE alert follows. Turn it off with `WALLET_CREATED_NOTICE=false`.
 
-### Hidden start command: /letsgo
-`/letsgo` is **secret**. No message, button, `/help` text or Telegram command menu ever shows it.
-Only people who know it can type it, and only the admin chat IDs are accepted.
+### Starting monitoring: server command only
+Monitoring can **only** be started from the VPS. Telegram cannot start it: `/letsgo` and old buttons
+do nothing (unless `ALLOW_TELEGRAM_START=true`).
+```bash
+cd /opt/sptronfinal/tron-usdt-monitor
+docker compose exec tron-usdt-monitor python -m app.control start    # start (count from 0)
+docker compose exec tron-usdt-monitor python -m app.control stop     # pause
+docker compose exec tron-usdt-monitor python -m app.control status   # RUNNING/PAUSED + counter
+```
 - **On every start** (update, restart, VPS reboot) the bot comes online **paused and silent**:
-  no Telegram message is sent (`NOTIFY_ON_STARTUP=false`) and nothing is detected or alerted.
-- **Type `/letsgo`** after refilling. Monitoring starts **from that moment**, the counter starts at
-  0/150, and every admin gets "🚀 Monitoring started".
-- **At 150 transactions** (`TX_LIMIT_THRESHOLD`), right after the 150th alert, every admin gets:
-  ```
-  Balance negative 🚨
-  Fill resources
-  Run again
-
-  150/150 transactions reached. ⏸️ Monitoring is PAUSED.
-  ```
-  and the bot pauses again until the next `/letsgo`.
-- `/start` never starts monitoring. `/reset` only restarts the counter.
+  no Telegram message, nothing detected or alerted.
+- **`app.control start`** starts monitoring from that moment within a few seconds. The counter
+  starts at 0/150 and every admin gets "🚀 Monitoring started".
+- **At 150 transactions** every admin gets *Balance negative 🚨 / Fill resources / Run again* and the
+  bot pauses again until the next `app.control start`.
 - The pause state and count are stored in the database. `START_PAUSED=false` makes the bot resume
-  by itself after a restart. `PAUSE_ON_LIMIT=false` sends only the notice at 150.
+  by itself after a restart.
 
 ### Historical transactions
 With `BACKFILL_ENABLED=false` (default), the first start records the current chain time or block as
@@ -152,7 +150,7 @@ Only the configured chat IDs can use commands or receive alerts. Other chats get
 |---|---|
 | `/start` | Intro (does not start monitoring) |
 
-The hidden `/letsgo` starts monitoring. It is not listed in the bot's menu or `/help`.
+Monitoring is started only from the server: `docker compose exec tron-usdt-monitor python -m app.control start`.
 | `/status` | Online/degraded status, wallet, network, contract, range, detected count, last tx checked, last match, API latency, detection latency, uptime |
 | `/wallet` | Monitored wallet, network, token, range, monitoring state |
 | `/reset` | Restarts the transaction counter at 0 (does not start monitoring) |
@@ -218,7 +216,7 @@ docker compose build
 ```bash
 docker compose up -d
 ```
-The bot starts **silently** (no Telegram message) and paused. Type the hidden `/letsgo` to start monitoring, then `/status` to check it.
+The bot starts **silently** (no Telegram message) and paused. Start monitoring with `docker compose exec tron-usdt-monitor python -m app.control start`, then check with `/status`.
 
 **8. Check logs**
 ```bash
@@ -303,8 +301,9 @@ app/
   tx_limit.py          150-transaction counter, "Balance negative" notice, pause/resume
   startup_checks.py    mainnet + on-chain USDT contract verification
   logger.py            structured (text/json) logging with secret redaction
+  control.py           server-side start/stop/status of monitoring
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 121 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 124 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

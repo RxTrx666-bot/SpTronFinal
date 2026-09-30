@@ -18,7 +18,7 @@ All state lives in the database, so count, pause and "already notified" survive 
 from __future__ import annotations
 
 import logging
-from typing import Protocol
+from typing import Awaitable, Callable, Protocol
 
 from app.database import Repository
 from app.logger import kv
@@ -30,6 +30,7 @@ STATE_START_ID = "limit.start_id"
 STATE_NOTIFIED_CYCLE = "limit.notified_cycle"
 STATE_PAUSED = "limit.paused"
 STATE_THRESHOLD = "limit.threshold"
+STATE_CONTROL = "control.request"  # written by `python -m app.control start|stop` on the server
 
 
 class NoticeSink(Protocol):
@@ -46,6 +47,7 @@ class TxLimitTracker:
         self.pause_on_limit = pause_on_limit
         self.paused = False  # in-memory mirror of STATE_PAUSED (checked on every transfer)
         self.resume_generation = 0  # bumped on every resume; the monitor re-anchors "now" when it changes
+        self.on_resume: Callable[[int], Awaitable[None]] | None = None  # e.g. tell the admins
 
     @property
     def enabled(self) -> bool:
@@ -101,11 +103,33 @@ class TxLimitTracker:
         return cycle
 
     async def pause(self, reason: str) -> None:
-        """Pause monitoring until /letsgo (used at startup when START_PAUSED=true)."""
+        """Pause monitoring until started (used at startup when START_PAUSED=true)."""
         if not self.paused:
             self.paused = True
             await self.repo.set_state(STATE_PAUSED, "1")
-        log.warning("monitoring_paused_waiting_for_letsgo", extra=kv(reason=reason))
+        log.warning("monitoring_paused_waiting_for_start", extra=kv(reason=reason))
+
+    async def apply_control(self) -> str | None:
+        """Apply a pending server-side start/stop request (see app/control.py)."""
+        request = await self.repo.get_state(STATE_CONTROL)
+        if not request:
+            return None
+        await self.repo.set_state(STATE_CONTROL, "")
+        action = request.split(":", 1)[0]
+        if action == "start":
+            if not self.paused:
+                log.info("control_start_ignored_already_running")
+                return "already_running"
+            _, cycle = await self.resume()
+            log.info("control_start_applied", extra=kv(cycle=cycle))
+            if self.on_resume is not None:
+                await self.on_resume(cycle)
+            return "started"
+        if action == "stop":
+            await self.pause("server command")
+            return "stopped"
+        log.warning("control_request_unknown", extra=kv(request=request))
+        return None
 
     async def resume(self) -> tuple[bool, int]:
         """▶️ Start: un-pause (monitoring restarts from *now*) and begin a new cycle.

@@ -185,8 +185,10 @@ class BaseMonitor:
         while not stop.is_set():
             try:
                 tracker = self.processor.limit_tracker
+                if tracker is not None:
+                    await tracker.apply_control()  # server-side `python -m app.control start|stop`
                 if tracker is not None and tracker.paused:
-                    # Paused after the transaction limit: no polling, no alerts until ▶️ Start.
+                    # Paused (at startup or after the limit): no polling, no alerts until started.
                     self.stats.paused = True
                     if self._heartbeat:
                         self._heartbeat()

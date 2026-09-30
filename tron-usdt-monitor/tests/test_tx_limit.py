@@ -32,6 +32,7 @@ class TelegramRecorder:
 
 
 async def setup(threshold="150", repo=None, recorder=None, **env):
+    env.setdefault("ALLOW_TELEGRAM_START", "true")  # most tests here exercise the Telegram path
     settings = make_settings(TX_LIMIT_THRESHOLD=threshold, ALERT_DIRECTIONS="OUTGOING",
                              WALLET_CREATED_NOTICE="false", **env)
     if repo is None:
@@ -346,4 +347,68 @@ def test_letsgo_is_never_shown_anywhere():
             assert hidden(t), t
         assert all("reply_markup" not in b for m, b in rec.messages if m == "sendMessage")
         assert all(name != "letsgo" for name, _ in COMMANDS)  # not in Telegram's command menu
+    run(go())
+
+
+def test_default_telegram_cannot_start_only_server_command_can(tmp_path):
+    """Default: /letsgo and old buttons do nothing; `python -m app.control start` starts it."""
+    from app.control import run as control
+
+    async def go():
+        db = tmp_path / "m.db"
+        repo = SQLiteRepository(str(db))
+        await repo.init()
+        settings, _, dispatcher, tracker, processor, rec, bot = await setup(
+            threshold="150", repo=repo, ALLOW_TELEGRAM_START="false")
+        assert settings.allow_telegram_start is False
+        started = []
+
+        async def on_resume(cycle):
+            started.append(cycle)
+
+        tracker.on_resume = on_resume
+        await tracker.pause("startup")
+        # Telegram cannot start it
+        assert "Unknown command" in await bot.handle_update(cmd("/letsgo"))
+        assert await bot.handle_update(press_start()) is None
+        assert tracker.paused and await tracker.apply_control() is None
+        # server command (separate process, same DB) starts it
+        assert "Start requested" in await control("start", f"sqlite:///{db}")
+        assert await tracker.apply_control() == "started"
+        assert not tracker.paused and started and await tracker.count() == 0
+        assert "Already running" in await control("start", f"sqlite:///{db}")
+        assert "RUNNING" in await control("status", f"sqlite:///{db}")
+        # server stop pauses again
+        assert "Stop requested" in await control("stop", f"sqlite:///{db}")
+        assert await tracker.apply_control() == "stopped" and tracker.paused
+        assert "PAUSED" in await control("status", f"sqlite:///{db}")
+        await repo.close()
+    run(go())
+
+
+def test_control_cli_usage(capsys):
+    from app.control import main
+    assert main([]) == 2 and "usage" in capsys.readouterr().out
+    assert main(["fly"]) == 2
+
+
+def test_monitor_loop_applies_server_start():
+    from tests.test_monitor import FakeTron
+    from app.tx_limit import STATE_CONTROL
+    import asyncio
+
+    async def go():
+        settings, repo, dispatcher, tracker, processor, rec, bot = await setup(
+            threshold="150", VERIFY_EVENT_LOG="false", ALLOW_TELEGRAM_START="false")
+        await tracker.pause("startup")
+        mon = AccountMonitor(settings, FakeTron(), repo, processor, processor.stats)
+        await repo.set_state(STATE_CONTROL, "start:1")
+        stop = asyncio.Event()
+
+        async def one_iteration(_):
+            stop.set()
+
+        mon._sleep = one_iteration
+        await mon.run(stop)
+        assert not tracker.paused and mon.stats.initialized
     run(go())
