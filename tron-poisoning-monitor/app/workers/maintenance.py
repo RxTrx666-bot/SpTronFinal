@@ -224,3 +224,23 @@ class Heartbeat:
                 await asyncio.wait_for(stop.wait(), timeout=10)
             except asyncio.TimeoutError:
                 pass
+
+
+class NetworkPruneWorker:
+    """Hourly retention of the network-wide payment memory."""
+
+    def __init__(self, settings, network) -> None:
+        self.s = settings
+        self.network = network
+
+    async def run(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            try:
+                await self.network.prune()
+            except Exception as exc:  # noqa: BLE001
+                if not is_transient_db_error(exc):
+                    log.exception("NETWORK_PRUNE_ERROR", error=type(exc).__name__)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=self.s.network_prune_interval_minutes * 60)
+            except asyncio.TimeoutError:
+                pass

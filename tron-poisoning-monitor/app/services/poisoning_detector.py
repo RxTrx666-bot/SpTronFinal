@@ -202,6 +202,8 @@ class PoisoningDetector:
         self.engine = DecisionEngine(SimilarityEngine(SimilarityConfig.from_settings(settings)), RiskEngine(RiskConfig.from_settings(settings)))
         self.jobs_wakeup = asyncio.Event()
         self.dust_max = settings.units("dust_max_amount_usdt", settings.primary_token.decimals)
+        self.network_min_alert = settings.units("network_min_alert_usdt", settings.primary_token.decimals)
+        self.significant = settings.units("significant_amount_usdt", settings.primary_token.decimals)
         self.stats = {"analysed": 0, "events": 0, "successful": 0, "candidates": 0, "attempts": 0}
 
     # ----------------------------------------------------------------- entry point
@@ -236,7 +238,7 @@ class PoisoningDetector:
             tx = await s.get(Transaction, tx_id)
             token = self.s.tokens_by_contract.get(tx.token_contract)
             if token is not None and tx.from_address != tx.to_address:
-                if self.registry.is_monitored(tx.from_address):
+                if self.registry.is_monitored(tx.from_address) or tx.source == "NETWORK":
                     c, a = await self._outgoing(s, tx, token, started)
                     created += c
                     alerts |= a
@@ -281,7 +283,10 @@ class PoisoningDetector:
         created: list[int] = []
         alerts = False
 
+        watched = bool(wallet and wallet.status != WalletStatus.REMOVED.value)
         if tx.amount == 0:
+            if not watched:
+                return created, alerts  # network-wide: zero-value spoofs are kept only as evidence rows
             # Zero-value transfer "from" the victim: almost always a transferFrom(victim, lookalike, 0)
             # spoof created by a third party. Not a payment -> never aggregated, at most an ATTEMPT.
             if prior.transaction_count == 0:
@@ -521,7 +526,7 @@ class PoisoningDetector:
         if local.other_victims:
             self._add_evidence(
                 s, ev.id, "other_victims", "OTHER_VICTIMS", "FACT", True,
-                f"{len(local.other_victims)} other monitored wallet(s) also sent funds to the suspicious address", now,
+                f"{len(local.other_victims)} other wallet(s) were also observed sending funds to the suspicious address", now,
                 data={"victims": local.other_victims},
             )  # fmt: skip
         if local.label:
@@ -532,11 +537,20 @@ class PoisoningDetector:
 
         alerts = False
         if not historical:
-            await repo.enqueue_job(s, "INVESTIGATE", str(ev.id), now)
-            if event_type == EventType.SUCCESSFUL_POISONING_EVENT and self.s.trace_enabled:
+            success = event_type == EventType.SUCCESSFUL_POISONING_EVENT
+            if wallet is not None and wallet.status != WalletStatus.REMOVED.value:
+                active = wallet.status == WalletStatus.ACTIVE.value  # watched wallet (/add)
+                investigate = True
+            else:  # network-wide detection on a wallet nobody added
+                active = self.s.network_wide and tx.amount >= self.network_min_alert
+                investigate = success or tx.amount >= self.significant
+            if investigate:
+                await repo.enqueue_job(s, "INVESTIGATE", str(ev.id), now)
+            else:
+                ev.investigation_status = "SKIPPED"
+            if success and self.s.trace_enabled:
                 await repo.enqueue_job(s, "TRACE", f"{ev.id}:1", now, {"event_id": ev.id, "run": 1})
-            active = bool(wallet and wallet.status == WalletStatus.ACTIVE.value)
-            if active and (event_type == EventType.SUCCESSFUL_POISONING_EVENT or self.s.notify_candidates):
+            if active and (success or self.s.notify_candidates):
                 alerts = bool(await self.notifier.event_alert(s, ev.id, Notifier.kind_for(event_type.value)))
         else:
             ev.investigation_status = "SKIPPED"

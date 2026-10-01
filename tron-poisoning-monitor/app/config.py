@@ -25,7 +25,7 @@ OFFICIAL_USDT_TRC20 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 # Default risk weights (points).  Override any subset with RISK_WEIGHTS='{"new_recipient": 25}'.
 DEFAULT_RISK_WEIGHTS: dict[str, int] = {
     # --- positive signals --------------------------------------------------
-    "legit_used_2plus": 8,  # legitimate recipient used >= 2 times
+    "legit_used_2plus": 10,  # legitimate recipient used >= 2 times
     "legit_used_5plus": 4,  # additional, >= 5 times
     "legit_used_10plus": 3,  # additional, >= 10 times
     "legit_substantial_volume": 5,  # victim -> legit total >= LEGIT_SUBSTANTIAL_TOTAL_USDT
@@ -100,6 +100,13 @@ class Settings(BaseSettings):
     confirmation_check_interval_seconds: float = 10.0
     drop_unconfirmed_after_minutes: int = 10
     pending_recovery_interval_seconds: float = 30.0
+
+    # ------------------------------------------------------------------ network-wide detection
+    # Detect poisoning on ANY TRON wallet, not only wallets added with /add (block mode only).
+    network_wide: bool = True
+    network_memory_days: int = Field(7, ge=1, le=90)  # how long sender->recipient payments are remembered
+    network_min_alert_usdt: str = "100"  # network-wide alerts only for payments of at least this amount
+    network_prune_interval_minutes: int = 60
 
     # ------------------------------------------------------------------ history
     history_days: int = 0  # 0 = as far back as the API allows
@@ -209,6 +216,7 @@ class Settings(BaseSettings):
             "large_amount_usdt",
             "dust_max_amount_usdt",
             "trace_min_amount_usdt",
+            "network_min_alert_usdt",
         ):
             parse_token_amount(getattr(self, name), 6)
         return self
@@ -315,5 +323,6 @@ def describe(settings: Settings) -> dict[str, Any]:
         "min_suffix_match": settings.min_suffix_match,
         "min_similarity_score": settings.min_similarity_score,
         "trace_hops": settings.trace_hops,
+        "network_wide": settings.network_wide and settings.monitor_mode == "block",
         "x_enabled": settings.x_enabled,
     }

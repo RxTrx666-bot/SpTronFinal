@@ -128,12 +128,13 @@ class Ingestor:
 
 
 class BlockMonitor:
-    def __init__(self, settings, session_factory, source, clock: Clock, ingestor: Ingestor) -> None:
+    def __init__(self, settings, session_factory, source, clock: Clock, ingestor: Ingestor, network=None) -> None:
         self.s = settings
         self.sf = session_factory
         self.source = source
         self.clock = clock
         self.ingestor = ingestor
+        self.network = network
         self.contracts = {t.contract: t.decimals for t in settings.token_list}
         self.cursor: int | None = None
         self.head: int | None = None
@@ -171,7 +172,11 @@ class BlockMonitor:
     async def process_block(self, blk: BlockData) -> list[int]:
         detected = self.clock.now()
         events = await self.ingestor.ingest(blk.transfers, source="LIVE", detected_at=detected)
-        await self._save_cursor(blk.number, blk.timestamp_ms)
+        if self.network is not None:
+            events += await self.network.process(blk, detected)  # also advances the cursor atomically
+            self.cursor, self.last_block_ts_ms = blk.number, blk.timestamp_ms
+        else:
+            await self._save_cursor(blk.number, blk.timestamp_ms)
         self.blocks_processed += 1
         self.last_block_latency_ms = max(0, to_ms(detected) - blk.timestamp_ms)
         return events

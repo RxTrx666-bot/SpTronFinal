@@ -238,7 +238,7 @@ class Investigator:
         return self.detector.engine.risk.assess(ctx)
 
     async def refresh_other_victims(self, event_id: int) -> None:
-        """Re-check whether other monitored wallets paid the same suspicious address."""
+        """Re-check whether other wallets paid the same suspicious address."""
         async with self.sf() as s:
             ev = await s.get(PoisoningEvent, event_id)
             if ev is None:
@@ -247,6 +247,6 @@ class Investigator:
         if others:
             await self.apply_findings(
                 event_id,
-                [("other_victims", "OTHER_VICTIMS", "FACT", True, f"{len(others)} other monitored wallet(s) also sent funds to the suspicious address", {"victims": sorted(others)}, None)],
+                [("other_victims", "OTHER_VICTIMS", "FACT", True, f"{len(others)} other wallet(s) were also observed sending funds to the suspicious address", {"victims": sorted(others)}, None)],
                 dust_tri=None, forwarding_summary=None, source="refresh",
             )  # fmt: skip

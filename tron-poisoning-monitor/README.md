@@ -1,8 +1,16 @@
 # TRON Address-Poisoning Monitor
 
-A **read-only** bot that watches TRON wallets and alerts on Telegram when a wallet
-**sends funds to a look-alike of an address it used before**. That payment is the moment an
-address-poisoning attack succeeds.
+A **read-only** bot that detects successful address-poisoning attacks on TRON and alerts on
+Telegram when a wallet **sends funds to a look-alike of an address it used before**. That payment
+is the moment an address-poisoning attack succeeds.
+
+It works in two layers at the same time:
+
+* **Network-wide (default, `NETWORK_WIDE=true`)**: every USDT transfer on TRON is checked. The
+  bot remembers who paid whom over the last `NETWORK_MEMORY_DAYS` (default 7) and alerts when
+  *any* wallet pays a look-alike of an address it recently paid. No `/add` is needed.
+* **Watched wallets (`/add`)**: for wallets you care about most, the bot also loads their
+  complete history (not just the last few days), keeps it forever, and alerts at any amount.
 
 ```
 Victim → TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c   (12 payments over 5 months)
@@ -132,7 +140,7 @@ printed in the report. Defaults are listed below; override any of them with
 
 | Signal | Points |
 |---|---|
-| Legitimate recipient used ≥2 / ≥5 / ≥10 times | +8 / +4 / +3 |
+| Legitimate recipient used ≥2 / ≥5 / ≥10 times | +10 / +4 / +3 |
 | Victim → legitimate total ≥ `LEGIT_SUBSTANTIAL_TOTAL_USDT` (10k) | +5 |
 | Legitimate recipient used within `LEGIT_RECENT_DAYS` (180) | +5 |
 | Suspicious recipient never paid before | +20 |
@@ -163,6 +171,32 @@ Those cases stay CANDIDATE. Wording is always "possible" / "high-confidence"; th
 
 ---
 
+### Network-wide mode in detail (`app/services/network_scanner.py`)
+
+Per block (≈3 s, measured ≈95 ms of processing for 150 transfers on PostgreSQL):
+
+1. One indexed query loads, for every sender in the block, its remembered recipients that share a
+   folded 3-character prefix or suffix with the address being paid (and, for dust, with the dust
+   sender).
+2. The similarity engine checks those few candidates in memory.
+3. Look-alike payments go through the full detector: incident, confidence score, 🚨 alert,
+   investigation and fund trace.
+4. Dust and zero-value transfers from look-alikes are stored as evidence. A later payment to that
+   look-alike then scores "poisoning transaction observed: YES" (+15).
+5. All other payments are bulk-added to the payment memory, in the same DB transaction that
+   advances the block cursor, so restarts never double count.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `NETWORK_WIDE` | `true` | check every USDT transfer (block mode only) |
+| `NETWORK_MEMORY_DAYS` | `7` | how long payments of non-watched wallets are remembered (pruned hourly) |
+| `NETWORK_MIN_ALERT_USDT` | `100` | network-wide alerts only from this amount; smaller cases are still recorded |
+
+Disk: about 825 bytes per remembered sender→recipient pair (measured, including indexes), so
+expect a few GB for 7 days of TRON USDT traffic. Check with `df -h` and lower
+`NETWORK_MEMORY_DAYS` on small disks. The memory starts empty, so in the first days a victim's
+earlier payments may not be known yet. Wallets added with `/add` don't have this limitation.
+
 ## 3. Project structure
 
 ```
@@ -181,6 +215,7 @@ tron-poisoning-monitor/
 │   │   ├── similarity.py          # address similarity engine
 │   │   ├── risk_engine.py         # confidence scoring
 │   │   ├── poisoning_detector.py  # exactly-once detection, incidents, retrospective analysis
+│   │   ├── network_scanner.py     # network-wide detection over every USDT transfer + memory pruning
 │   │   ├── investigator.py        # on-chain evidence discovery + re-scoring / upgrades
 │   │   ├── fund_tracer.py         # multi-hop follow-the-money
 │   │   ├── labels.py              # operator label file / cache / TronScan public tags
@@ -195,10 +230,10 @@ tron-poisoning-monitor/
 │   │   └── maintenance.py         # confirmations, pending recovery, system_logs, heartbeat
 │   ├── simulation/                # in-memory TRON chain, scenarios, end-to-end runner
 │   └── utils/                     # address, amounts (integer only), logging (redaction), clock, rate limiter
-├── migrations/001_initial_schema.sql
+├── migrations/001_initial_schema.sql · 002_network_wide.sql
 ├── data/address_labels.json       # operator-curated labels (optional)
 ├── docs/example-output/           # outputs of the final simulation
-├── tests/                         # 67 tests
+├── tests/                         # 74 tests
 ├── Dockerfile · docker-compose.yml · .env.example
 ├── requirements.txt · requirements-dev.txt · pyproject.toml · pytest.ini
 ```
@@ -301,7 +336,7 @@ Only ids in `TELEGRAM_ADMIN_CHAT_ID` can use commands or buttons. Anyone else ge
 | `/list` | monitored wallets, history status, recipient counts |
 | `/pause` · `/resume` | pause / resume **alert delivery** globally (monitoring continues; alerts queue and are delivered on resume) |
 | `/pause <ADDRESS>` · `/resume <ADDRESS>` | silence / re-enable alerts for one wallet (data is still collected) |
-| `/status` | head/processed block, lag, API errors, queues, incident counts, measured alert latency |
+| `/status` | head/processed block, lag, network-wide scan counters, API usage per day, queues, incident counts, alert latency |
 | `/cases`, `/case <CASE_ID>` | recent incidents / one incident with buttons |
 | `/recipients <ADDRESS>` | historical recipient database of a wallet |
 
@@ -414,8 +449,8 @@ pytest                                                    # SQLite
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tron_test pytest   # real PostgreSQL + SQL migrations
 ```
 
-Results at delivery: **67 passed on PostgreSQL 16** (each test starts from an empty schema built
-by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **66 passed /
+Results at delivery: **74 passed on PostgreSQL 16** (each test starts from an empty schema built
+by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **73 passed /
 1 skipped on SQLite** (the skipped test is the PostgreSQL-only schema check). `ruff check` is clean.
 
 | # | Required scenario | Test |

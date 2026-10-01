@@ -27,6 +27,7 @@ from app.services.fund_tracer import FundTracer
 from app.services.history_service import HistoryService
 from app.services.investigator import Investigator
 from app.services.labels import LabelService
+from app.services.network_scanner import NetworkScanner
 from app.services.notifier import Notifier
 from app.services.poisoning_detector import LockManager, PoisoningDetector, WalletRegistry
 from app.services.telegram_service import BotApiTransport, ConsoleTransport, TelegramBot
@@ -37,7 +38,7 @@ from app.utils.clock import Clock, SystemClock, from_ms, iso
 from app.utils.logging import get_logger, register_secrets, setup_logging
 from app.workers.alert_worker import AlertWorker
 from app.workers.job_worker import JobWorker
-from app.workers.maintenance import ConfirmationWorker, Heartbeat, RecoveryWorker, SystemLogWriter
+from app.workers.maintenance import ConfirmationWorker, Heartbeat, NetworkPruneWorker, RecoveryWorker, SystemLogWriter
 
 log = get_logger(__name__)
 
@@ -74,10 +75,11 @@ class Application:
         self.ingestor = Ingestor(settings, self.sf, source, self.clock, self.registry, self.detector)
         self.admin = AdminService(settings, self.sf, self.clock, self.registry, self.jobs_wakeup, audit=self.syslog.audit)
         self.x = XService(settings)
+        self.network = NetworkScanner(settings, self.sf, self.clock, self.registry, self.detector) if settings.network_wide else None
         if settings.monitor_mode == "account":
             self.monitor = AccountMonitor(settings, self.sf, source, self.clock, self.ingestor)
         else:
-            self.monitor = BlockMonitor(settings, self.sf, source, self.clock, self.ingestor)
+            self.monitor = BlockMonitor(settings, self.sf, source, self.clock, self.ingestor, self.network)
         self.alerts = AlertWorker(settings, self.sf, self.clock, transport, self.notifier, self.admin)
         self.jobs = JobWorker(
             settings, self.sf, self.clock,
@@ -123,6 +125,8 @@ class Application:
             self.syslog.run(self.stop_event),
             Heartbeat(self.s.heartbeat_file, self.monitor).run(self.stop_event),
         ]
+        if self.network is not None and isinstance(self.monitor, BlockMonitor):
+            coros.append(NetworkPruneWorker(self.s, self.network).run(self.stop_event))
         if getattr(self.transport, "polls", False):
             coros.append(self.bot.run(self.stop_event))
         self.tasks = [asyncio.create_task(c) for c in coros]
@@ -199,7 +203,16 @@ class Application:
                 + (f" · last error: {self.source.last_error}" if getattr(self.source, "last_error", None) else "")
             )
         lines.append("")
-        lines.append(f"Wallets: {wallets.get('ACTIVE', 0)} active · {wallets.get('PAUSED', 0)} paused")
+        if self.network is not None and isinstance(m, BlockMonitor):
+            n = self.network.stats
+            lines.append(
+                f"🌐 Network-wide detection: ON · {n['transfers']:,} USDT transfers scanned since start · "
+                f"{n['lookalike_payments']} look-alike payments analysed · {n['dust_evidence']} poisoning dust transfers seen"
+            )
+            lines.append(f"Payment memory: {await self.network.remembered_pairs():,} sender→recipient pairs ({self.s.network_memory_days} days)")
+        else:
+            lines.append("🌐 Network-wide detection: OFF (only wallets added with /add)")
+        lines.append(f"Watched wallets (/add): {wallets.get('ACTIVE', 0)} active · {wallets.get('PAUSED', 0)} paused")
         lines.append(
             f"History: {hist.get(HistoryStatus.COMPLETE.value, 0)} complete · {hist.get('RUNNING', 0)} running · {hist.get('PENDING', 0)} queued · {hist.get('FAILED', 0)} failed"
         )

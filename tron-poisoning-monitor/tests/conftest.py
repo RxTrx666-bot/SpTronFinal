@@ -42,6 +42,7 @@ def make_settings(db_url: str, **kw) -> Settings:
         tron_rate_limit_rps=0,
         pending_recovery_interval_seconds=0.05,
         block_poll_interval_seconds=0.01,
+        network_wide=False,  # watched-wallet tests; network-wide mode is tested in test_network.py
     )
     base.update(kw)
     return Settings(_env_file=None, **base)

@@ -193,7 +193,7 @@ class RiskEngine:
         if ctx.dust_recipients_count is not None and ctx.dust_recipients_count >= self.cfg.multi_victim_min:
             add("suspicious_multi_victim", f"Suspicious address sent dust transfers to {ctx.dust_recipients_count} different wallets", "FACT")
         if ctx.other_victims_paid > 0:
-            add("suspicious_paid_by_other_victims", f"{ctx.other_victims_paid} other monitored wallet(s) also paid the suspicious address", "FACT")
+            add("suspicious_paid_by_other_victims", f"{ctx.other_victims_paid} other wallet(s) were also observed paying the suspicious address", "FACT")
         if ctx.suspicious_prior_activity is not None and ctx.suspicious_prior_activity <= self.cfg.fresh_address_max_prior_transfers:
             add("suspicious_fresh_address", f"Suspicious address had little prior activity ({ctx.suspicious_prior_activity} transfers)")
         if ctx.distinct_senders is not None and ctx.distinct_senders >= self.cfg.many_senders_min:

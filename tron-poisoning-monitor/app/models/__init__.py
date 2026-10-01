@@ -109,6 +109,7 @@ class HistoricalRecipient(Base):
         Index("ix_hist_victim_suffix", "victim_wallet", "token_contract", "suffix_key"),
         Index("ix_hist_victim_count", "victim_wallet", "token_contract", "transaction_count"),
         Index("ix_hist_recipient", "recipient_wallet"),
+        Index("ix_hist_last_seen", "last_seen"),
     )
 
 
@@ -140,6 +141,7 @@ class Transaction(Base):
         Index("ix_tx_to_ts", "to_address", "block_timestamp"),
         Index("ix_tx_analysis", "analysis_status", "id"),
         Index("ix_tx_confirmation", "confirmation_status", "block_number"),
+        Index("ix_tx_source_ts", "source", "block_timestamp"),
     )
 
 
