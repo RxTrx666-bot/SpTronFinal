@@ -96,12 +96,19 @@ Monitoring uses two independent paths:
    the number of wallets**: 10 or 100,000 monitored wallets still cost about one request per
    poll. By default, events are processed as soon as TronGrid sees them, about 3 s after the
    block (`REQUIRE_CONFIRMED=false`).
-2. **Monitoring scheduler (minutes).** A fixed pool of workers sweeps every monitored wallet
-   through `/v1/accounts/{wallet}/transactions/trc20`, starting from that wallet's checkpoint.
-   It catches anything the stream could have missed: a longer API outage, an event that arrived
-   late, or a wallet discovered after its deposit was already streamed. Newly discovered wallets
-   jump the queue. Only unknown transfers ≥ the threshold, plus Wallet A's outgoing transfers,
-   are looked up in detail, so a sweep stays cheap.
+2. **Late-event recheck (every minute).** The API does not always index events in perfect
+   order. Once a minute the stream re-reads the last 90 seconds, which costs a few requests,
+   to pick up anything that showed up late. The cursor itself never skips events: after an
+   outage the stream resumes from its checkpoint.
+3. **Background scheduler (small fixed budget).** A fixed pool of workers, limited to
+   `RECONCILE_MAX_REQUESTS_PER_SECOND` (default 1 request/s), so the live stream always keeps
+   the API quota. It does three things:
+   * re-checks Wallet A's outgoing transfers every `RECONCILE_INTERVAL_SECONDS`, so no
+     discovery is missed;
+   * checks each newly discovered wallet's incoming transfers once;
+   * optionally, every `RECONCILE_FULL_SWEEP_HOURS`, re-checks **every** monitored wallet.
+     This is off by default because it costs one request per wallet: with thousands of
+     wallets it exhausts a TronGrid key's quota.
 
 ### Duplicate prevention
 
@@ -122,7 +129,7 @@ so this is the safest trade-off: an alert is never silently lost.
 ### Restarts, crashes and outages
 
 * **Stream cursor:** `checkpoints['stream:<contract>']` holds the newest block time fully
-  processed. Each poll restarts at `cursor − STREAM_OVERLAP_SECONDS`.
+  processed. Each poll restarts at `cursor − STREAM_OVERLAP_SECONDS` (default 3 s, one block).
 * **Wallet checkpoints:** `checkpoints[<wallet>]` and `checkpoints['out:<Wallet A>']` are
   used by the scheduler.
 * **Monitoring start** is stored once. Transfers that happened **while the bot was down**
@@ -139,11 +146,15 @@ so this is the safest trade-off: an alert is never silently lost.
 
 * The live path is **O(1) in API calls** regardless of wallet count. Matching is an in-memory
   dictionary lookup (about 100 bytes per wallet, so 1 million wallets ≈ 100 MB).
-* There is never one loop per wallet. The scheduler has `RECONCILE_WORKERS` workers, and every
-  API call from every component shares one semaphore (`MAX_CONCURRENT_API_REQUESTS`) and one
-  rate limit (`MAX_REQUESTS_PER_SECOND`). More wallets only make a safety-net sweep take
-  longer: 1,000 wallets at 10 req/s ≈ 100 s per sweep. The sweep repeats every
-  `RECONCILE_INTERVAL_SECONDS` at most.
+* There is never one loop per wallet. The scheduler has `RECONCILE_WORKERS` workers. Every API
+  call from every component shares one semaphore (`MAX_CONCURRENT_API_REQUESTS`) and one rate
+  limit (`MAX_REQUESTS_PER_SECOND`). Background work has its own lower cap
+  (`RECONCILE_MAX_REQUESTS_PER_SECOND`).
+* A `429 Too Many Requests` slows down **every** caller (a global cooldown), not just the
+  request that got it.
+* Typical steady-state usage is about 1 request/s, most of it the live stream, whether you
+  monitor 100 or 100,000 wallets.
+* **One API key per bot.** If several programs share a TronGrid key, they share its quota.
 * All lookups are indexed: `to_address`, `from_address`, `tx_hash`, `block_number`,
   `timestamp`, `amount_base_units`. `/wallets` is paginated.
 
@@ -183,8 +194,11 @@ All settings are in `.env` (see [`.env.example`](.env.example)). The most import
 | `ALERT_ON_DISCOVERY` | `false` | Message for every newly discovered wallet |
 | `ALERT_ON_SELF_TRANSFER` | `false` | Alert when a wallet sends ≥ threshold to itself |
 | `MAX_CONCURRENT_API_REQUESTS` | `5` | Global in-flight API request cap |
-| `MAX_REQUESTS_PER_SECOND` | `10` | Global API rate limit |
-| `RECONCILE_ENABLED` / `RECONCILE_INTERVAL_SECONDS` / `RECONCILE_WORKERS` | `true` / `300` / `2` | Safety-net scheduler |
+| `MAX_REQUESTS_PER_SECOND` | `8` | Global API rate limit |
+| `RECONCILE_ENABLED` / `RECONCILE_INTERVAL_SECONDS` / `RECONCILE_WORKERS` | `true` / `300` / `2` | Background scheduler (Wallet A re-check interval) |
+| `RECONCILE_MAX_REQUESTS_PER_SECOND` | `1` | API budget for background work |
+| `RECONCILE_FULL_SWEEP_HOURS` | `0` (off) | Re-check every monitored wallet (1 request per wallet) |
+| `STREAM_RECHECK_SECONDS` / `STREAM_RECHECK_WINDOW_SECONDS` | `60` / `90` | Late-event recheck |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID` | – | Alerts go to, and commands are accepted only from, this chat |
 | `DATABASE_URL` / `POSTGRES_PASSWORD` | – | PostgreSQL |
 | `HEALTH_PORT` | `8080` | `GET /health` |
@@ -278,8 +292,9 @@ Timestamp:
 ## Health and logs
 
 * `GET http://127.0.0.1:8080/health` returns `200 {"status":"ok",…}` or `503 {"status":"degraded",…}`.
-  It reports degraded when the stream has not polled for `HEALTH_MAX_STALL_SECONDS` or the
-  database is unreachable. Docker's `HEALTHCHECK` uses `python -m app.health`.
+  It reports degraded when the stream has not polled for `HEALTH_MAX_STALL_SECONDS`, is more
+  than `HEALTH_MAX_STALL_SECONDS` behind the chain, or the database is unreachable.
+  `api_rate_limited` counts 429 responses. Docker's `HEALTHCHECK` uses `python -m app.health`.
 * Logs are structured: `key=value` text or JSON lines with `LOG_FORMAT=json`. They cover
   discovered wallets, large transfers, API latency, API errors and retries, checkpoint
   resumes, sweep progress, Telegram success and failure, and end-to-end latency:

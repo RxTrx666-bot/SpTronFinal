@@ -130,7 +130,9 @@ class CommandHandler:
             f"Last processed block: {rt.stream.last_block or '—'}",
             f"Stream lag: {humanize(lag) if lag is not None else '—'}",
             f"Last successful API request: {humanize(time.time() - last_api) + ' ago' if last_api else '—'}",
-            f"Scheduler sweeps: {rt.scheduler.sweeps} (last {humanize(rt.scheduler.last_sweep_seconds or 0)})",
+            f"Background checks: {rt.scheduler.sweeps} · full sweep: "
+            + (f"every {s.reconcile_full_sweep_hours:g}h" if s.reconcile_full_sweep_hours > 0 else "off"),
+            f"API rate-limit hits (429): {rt.tron.rate_limited if rt.tron else 0}",
             f"Backfill: {'running' if rt.scheduler.backfill_running else ('enabled' if s.backfill_enabled else 'off')}",
             f"Pending alerts: {st['pending']}",
             f"Uptime: {humanize(time.time() - rt.started_at)}",

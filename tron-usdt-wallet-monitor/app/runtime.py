@@ -54,7 +54,9 @@ class Runtime:
         stalled = last_poll is None and now - self.started_at > self.settings.health_max_stall_seconds
         if last_poll is not None and now - last_poll > self.settings.health_max_stall_seconds:
             stalled = True
-        ok = not stalled and self.db_ok
+        lag = self.stream.lag_seconds
+        behind = lag is not None and last_poll is not None and lag > self.settings.health_max_stall_seconds
+        ok = not stalled and not behind and self.db_ok
         body = {
             "status": "ok" if ok else "degraded",
             "uptime_seconds": int(now - self.started_at),
@@ -66,5 +68,7 @@ class Runtime:
             "monitored_wallets": len(self.registry.monitored()),
             "last_api_success_age_seconds": None if self.last_api_success is None else round(now - self.last_api_success, 1),
             "alerts_sent": self.dispatcher.sent if self.dispatcher else 0,
+            "api_rate_limited": self.tron.rate_limited if self.tron else 0,
+            "late_events_recovered": self.stream.late_events,
         }
         return ok, body

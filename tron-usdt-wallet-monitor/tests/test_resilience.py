@@ -189,7 +189,7 @@ async def test_worker_pool_sweeps_many_wallets(sf, tron):
     """The real scheduler loop: fixed worker pool, every wallet checked, alerts recovered."""
     import asyncio
 
-    settings = make_settings(reconcile_workers=3, reconcile_interval_seconds=3600)
+    settings = make_settings(reconcile_workers=3, reconcile_interval_seconds=3600, reconcile_full_sweep_hours=1, reconcile_max_requests_per_second=1000)
     rt = await build_runtime(settings, sf, tron, now_ms=T0)
     ws = [addr(f"pool-{i}") for i in range(60)]
     for i, w in enumerate(ws):
@@ -210,3 +210,42 @@ async def test_worker_pool_sweeps_many_wallets(sf, tron):
     assert tron.calls["account_trc20"] - before >= 61  # 60 wallets (in) + Wallet A (out)
     [a] = await large_alerts(sf)
     assert a.discovered_wallet == ws[42]
+
+
+async def test_default_scheduler_checks_root_and_new_wallets_not_full_sweep(sf, tron):
+    """With thousands of wallets the default must NOT re-check every wallet each cycle."""
+    import asyncio
+
+    settings = make_settings(reconcile_interval_seconds=3600, reconcile_max_requests_per_second=1000)
+    rt = await build_runtime(settings, sf, tron, now_ms=T0)
+    ws = [addr(f"quiet-{i}") for i in range(50)]
+    for i, w in enumerate(ws):
+        tron.add(WALLET_A, w, 1, ts=T0 + 1000 + i)
+    await poll(rt)
+    stop = asyncio.Event()
+    task = asyncio.create_task(rt.scheduler.run(stop))
+    for _ in range(200):
+        if rt.scheduler.sweeps and rt.scheduler._priority.empty() and not rt.scheduler._queued:
+            break
+        await asyncio.sleep(0.02)
+    calls_after_first_cycle = tron.calls["account_trc20"]
+    stop.set()
+    await asyncio.wait_for(task, 5)
+    # 50 one-off checks of the newly discovered wallets + 1 Wallet A check; no repeat sweep
+    assert calls_after_first_cycle == 51
+    assert rt.scheduler.last_full_sweep is None
+
+
+async def test_recheck_recovers_late_indexed_event(rt, sf, tron):
+    tron.add(WALLET_A, W1, usdt("0.01"), ts=T0 + 1000)
+    late = tron.add(X, W1, usdt("900"), ts=T0 + 20_000)
+    tron.hidden_from_stream.add(late["transaction_id"])  # not indexed yet when we poll
+    tron.add(X, addr("other"), 5, ts=T0 + 60_000)  # stream moves past it
+    await poll(rt)
+    assert await large_alerts(sf) == []
+    tron.hidden_from_stream.clear()  # the API indexes it late
+    assert await rt.stream.recheck_once() == 1
+    [a] = await large_alerts(sf)
+    assert a.tx_hash == late["transaction_id"]
+    assert rt.stream.cursor_ms == T0 + 60_000  # recheck never moves the cursor
+    assert await rt.stream.recheck_once() == 0  # and is idempotent

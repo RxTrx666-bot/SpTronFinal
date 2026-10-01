@@ -227,6 +227,7 @@ async def test_health_endpoint(rt, settings):
 
     rt.settings = make_settings(health_port=18087, health_host="127.0.0.1")
     rt.stream.last_poll_at = time.time()
+    rt.stream.cursor_ms = int(time.time() * 1000) - 5000  # 5 s behind the chain
     stop = asyncio.Event()
     task = asyncio.create_task(serve_health(rt, stop))
     await asyncio.sleep(0.1)
@@ -241,3 +242,6 @@ async def test_health_endpoint(rt, settings):
     assert b"200 OK" in head
     data = json.loads(body)
     assert data["status"] == "ok" and data["db_ok"] is True
+
+    rt.stream.cursor_ms -= 3600_000  # an hour behind -> degraded
+    assert rt.health()[0] is False

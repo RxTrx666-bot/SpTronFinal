@@ -87,7 +87,7 @@ class FakeTron:
         nxt = start + limit
         return page, (str(nxt) if nxt < len(rows) else None)
 
-    async def get_contract_events(self, *, min_timestamp_ms, fingerprint, only_confirmed, limit):
+    async def get_contract_events(self, *, min_timestamp_ms, fingerprint, only_confirmed, limit, max_timestamp_ms=None):
         self.calls["contract_events"] += 1
         self.min_ts_seen.append(min_timestamp_ms)
         if self.fail_stream:
@@ -99,6 +99,7 @@ class FakeTron:
             if e["contract_address"] == self.contract
             and e["transaction_id"] not in self.hidden_from_stream
             and (min_timestamp_ms is None or e["block_timestamp"] >= min_timestamp_ms)
+            and (max_timestamp_ms is None or e["block_timestamp"] <= max_timestamp_ms)
             and not (only_confirmed and e.get("_unconfirmed"))
         ]
         return self._paginate(rows, fingerprint, limit)

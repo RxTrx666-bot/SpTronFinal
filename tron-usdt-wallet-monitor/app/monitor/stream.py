@@ -7,9 +7,11 @@ roughly one request per POLL_INTERVAL_SECONDS (more only while catching up).
 
 Checkpointing: the cursor (``checkpoints['stream:<contract>']``) is the
 newest block timestamp fully processed.  Each poll starts at
-``cursor - STREAM_OVERLAP_SECONDS`` because the API does not guarantee perfect
-ordering and late/unconfirmed events may show up slightly after newer ones.
-Re-reading the overlap is harmless: storage is idempotent on (tx_hash, event_index).
+``cursor - STREAM_OVERLAP_SECONDS`` (one block: events of the same block share
+a timestamp).  Because the API does not guarantee perfect ordering, a cheap
+"recheck" pass re-reads the last STREAM_RECHECK_WINDOW_SECONDS once every
+STREAM_RECHECK_SECONDS to pick up events indexed late.  Re-reading is
+harmless: storage is idempotent on (tx_hash, event_index).
 The cursor is only advanced *after* a page has been committed, so a crash or a
 DB/API failure never skips events.
 """
@@ -47,6 +49,8 @@ class StreamMonitor:
         self.last_poll_at: float | None = None
         self.events_scanned = 0
         self.rejected: dict[str, int] = {}
+        self.last_recheck_at: float | None = None
+        self.late_events = 0
 
     async def initialise(self, start_ms: int | None = None) -> None:
         """First run: start at ``start_ms`` (now). Restart: resume from the saved cursor."""
@@ -108,6 +112,52 @@ class StreamMonitor:
         if block and block > (self.last_block or 0):
             self.last_block = block
 
+    async def recheck_once(self) -> int:
+        """Re-read a recent window once to pick up events the API indexed late.
+
+        Does not move the cursor; anything already stored is skipped by the
+        (tx_hash, event_index) constraint.  Returns the number of new transfers.
+        """
+        if self.cursor_ms is None or self.s.stream_recheck_window_seconds <= 0:
+            return 0
+        lo = self.cursor_ms - self.s.stream_recheck_window_seconds * 1000
+        hi = self.cursor_ms - self.s.stream_overlap_seconds * 1000
+        if hi <= lo:
+            return 0
+        fingerprint: str | None = None
+        stored = 0
+        for _ in range(self.s.stream_max_pages_per_poll):
+            raws, fingerprint = await self.source.get_contract_events(
+                min_timestamp_ms=lo,
+                max_timestamp_ms=hi,
+                fingerprint=fingerprint,
+                only_confirmed=self.s.require_confirmed,
+                limit=self.s.stream_page_limit,
+            )
+            if raws:
+                transfers, _ = parse_events(raws, self.s.usdt_contract)
+                stored += (await self.proc.process(transfers, source=SOURCE_STREAM, live=True)).stored
+            if not fingerprint or not raws:
+                break
+        self.last_recheck_at = time.time()
+        if stored:
+            self.late_events += stored
+            log.warning("Late-indexed events recovered", stored=stored)
+        return stored
+
+    async def _tick(self) -> bool:
+        more = await self.poll_once()
+        if (
+            not more
+            and self.s.stream_recheck_seconds > 0
+            and time.time() - (self.last_recheck_at or 0) >= self.s.stream_recheck_seconds
+        ):
+            if self.last_recheck_at is None:
+                self.last_recheck_at = time.time()  # first pass one interval after start
+            else:
+                await self.recheck_once()
+        return more
+
     @property
     def lag_seconds(self) -> float | None:
         if self.cursor_ms is None:
@@ -121,4 +171,4 @@ class StreamMonitor:
             interval=f"{self.s.poll_interval_seconds}s",
             mode="confirmed-only" if self.s.require_confirmed else "fast (includes unconfirmed)",
         )
-        await run_forever("stream", self.poll_once, self.s.poll_interval_seconds, stop)
+        await run_forever("stream", self._tick, self.s.poll_interval_seconds, stop)

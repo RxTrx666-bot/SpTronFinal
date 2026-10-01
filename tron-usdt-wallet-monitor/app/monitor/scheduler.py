@@ -1,22 +1,23 @@
-"""Central monitoring scheduler (per-wallet safety net) and historical backfill.
+"""Background monitoring scheduler (safety net) and historical backfill.
 
-The live stream (``monitor.stream``) catches transfers within seconds.  This
-scheduler guarantees nothing is missed even if the stream had a gap (API
-outage longer than the overlap window, a wallet discovered from an event that
-arrived late, ...):
+The live stream (``monitor.stream``) catches transfers within seconds and
+never skips events (its cursor only advances after a commit).  This
+scheduler adds cheap, rate-limited double-checks:
 
-    discovery queue (new wallets, high priority)  ─┐
-    periodic sweep over every monitored wallet    ─┴─> work queue
-                                                        │  RECONCILE_WORKERS workers
-                                                        ▼  (global API semaphore + rate limit)
-                                   /v1/accounts/{w}/transactions/trc20  (from checkpoint)
-                                                        │  only unknown candidates
-                                                        ▼
-                                   /v1/transactions/{tx}/events -> TransferProcessor
+    every RECONCILE_INTERVAL_SECONDS  -> Wallet A's outgoing transfers (1 request)
+    each newly discovered wallet      -> its incoming transfers, once
+    RECONCILE_FULL_SWEEP_HOURS (opt.) -> every monitored wallet (1 request each)
 
-There is never one loop per wallet: a fixed number of workers drains a queue,
-so 10 or 10,000 wallets cost the same concurrency; more wallets only make a
-sweep take longer (bounded by MAX_REQUESTS_PER_SECOND).
+                    work queue  ──>  RECONCILE_WORKERS workers
+                                     (own budget RECONCILE_MAX_REQUESTS_PER_SECOND,
+                                      plus the global API semaphore + rate limit)
+                                       │
+                /v1/accounts/{w}/transactions/trc20 (from the wallet's checkpoint)
+                                       │  only unknown candidates
+                /v1/transactions/{tx}/events -> TransferProcessor
+
+There is never one loop per wallet, and background work can never take the
+API quota away from the live stream.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from app.engine.processor import SOURCE_BACKFILL, SOURCE_RECONCILE, TransferProc
 from app.engine.registry import WalletRegistry
 from app.logging_setup import get_logger
 from app.monitor.loop import sleep_or_stop
-from app.tron.client import TronApiError, TronSource
+from app.tron.client import RateLimiter, TronApiError, TronSource
 from app.tron.normalizer import parse_events, parse_tx_info_logs
 
 log = get_logger(__name__)
@@ -75,10 +76,15 @@ class WalletScheduler:
         self.last_sweep_seconds: float | None = None
         self.recovered = 0  # transfers the stream had missed
         self.backfill_running = False
+        self.last_full_sweep: float | None = None
+        # Background budget: the live stream always keeps most of the API quota.
+        self._bg = RateLimiter(settings.reconcile_max_requests_per_second)
 
     # ------------------------------------------------------------- queueing
     def enqueue_discovered(self, addresses: list[str]) -> None:
-        """Processor callback: check freshly discovered wallets right away."""
+        """Processor callback: check each freshly discovered wallet once."""
+        if not self.s.reconcile_check_new_wallets:
+            return
         for a in addresses:
             job = _Job(a, IN)
             if job not in self._queued:
@@ -100,29 +106,37 @@ class WalletScheduler:
             try:
                 await self.check_wallet(job.address, job.direction)
             except TronApiError as exc:
-                log.warning("Wallet check failed; will retry next sweep", wallet=job.address, error=str(exc)[:150])
+                log.warning("Wallet check failed; will retry later", wallet=job.address, error=str(exc)[:150])
             except Exception:  # noqa: BLE001 - keep the worker alive
-                log.exception("Wallet check error; will retry next sweep", wallet=job.address)
+                log.exception("Wallet check error; will retry later", wallet=job.address)
             finally:
                 self._queued.discard(job)
                 if not prio:
                     self._queue.task_done()
 
-    def _sweep_jobs(self) -> list[_Job]:
-        return [_Job(w.address, OUT) for w in self.reg.expanders()] + [_Job(w.address, IN) for w in self.reg.monitored()]
+    def _sweep_jobs(self, full: bool = True) -> list[_Job]:
+        jobs = [_Job(w.address, OUT) for w in self.reg.expanders()]
+        if full:
+            jobs += [_Job(w.address, IN) for w in self.reg.monitored()]
+        return jobs
 
-    async def sweep_once_inline(self) -> int:
+    def _full_sweep_due(self) -> bool:
+        hours = self.s.reconcile_full_sweep_hours
+        if hours <= 0:
+            return False
+        return self.last_full_sweep is None or time.time() - self.last_full_sweep >= hours * 3600
+
+    async def sweep_once_inline(self, full: bool = True) -> int:
         """Sequential sweep without workers (tests / one-off maintenance)."""
-        jobs = self._sweep_jobs()
+        jobs = self._sweep_jobs(full)
         for job in jobs:
             await self.check_wallet(job.address, job.direction)
         return len(jobs)
 
-    async def sweep_once(self) -> int:
-        """Queue every wallet for the worker pool and wait until the sweep is done."""
-        jobs = self._sweep_jobs()
+    async def sweep_once(self, full: bool = True) -> int:
+        """Queue the jobs for the worker pool and wait until they are done."""
         n = 0
-        for job in jobs:
+        for job in self._sweep_jobs(full):
             if job not in self._queued:
                 self._queued.add(job)
                 self._queue.put_nowait(job)
@@ -132,15 +146,26 @@ class WalletScheduler:
 
     async def run(self, stop: asyncio.Event) -> None:
         workers = [asyncio.create_task(self._worker(stop), name=f"wallet-worker-{i}") for i in range(self.s.reconcile_workers)]
-        log.info("Monitoring scheduler started", workers=self.s.reconcile_workers, sweep_every=f"{self.s.reconcile_interval_seconds}s")
+        log.info(
+            "Monitoring scheduler started",
+            workers=self.s.reconcile_workers,
+            root_check_every=f"{self.s.reconcile_interval_seconds}s",
+            full_sweep=f"every {self.s.reconcile_full_sweep_hours}h" if self.s.reconcile_full_sweep_hours > 0 else "off",
+            max_rps=self.s.reconcile_max_requests_per_second,
+        )
         try:
             while not stop.is_set():
                 started = time.monotonic()
-                n = await self.sweep_once()
+                full = self._full_sweep_due()
+                n = await self.sweep_once(full=full)
                 self.sweeps += 1
                 self.last_sweep_at = time.time()
                 self.last_sweep_seconds = time.monotonic() - started
-                log.info("Sweep complete", wallets=n, seconds=f"{self.last_sweep_seconds:.1f}", recovered_total=self.recovered)
+                if full:
+                    self.last_full_sweep = time.time()
+                    log.info("Full sweep complete", wallets=n, seconds=f"{self.last_sweep_seconds:.1f}", recovered_total=self.recovered)
+                else:
+                    log.debug("Root check complete", seconds=f"{self.last_sweep_seconds:.1f}")
                 await sleep_or_stop(stop, self.s.reconcile_interval_seconds - self.last_sweep_seconds)
         finally:
             for w in workers:
@@ -170,6 +195,7 @@ class WalletScheduler:
         newest = None
         fingerprint = None
         for _ in range(MAX_PAGES_PER_CHECK):
+            await self._bg.acquire()
             items, fingerprint = await self.source.get_account_trc20(
                 address, direction=direction, min_timestamp_ms=min_ms, max_timestamp_ms=max_ms, fingerprint=fingerprint, limit=200
             )
@@ -240,9 +266,11 @@ class WalletScheduler:
 
     async def resolve(self, tx: str, frm: str, to: str, amount: int) -> list[Transfer]:
         """Get the exact (tx_hash, event_index) form of a transfer seen via the account API."""
+        await self._bg.acquire()
         transfers, _ = parse_events(await self.source.get_transaction_events(tx), self.s.usdt_contract)
         if not any(t.from_address == frm and t.to_address == to and t.amount_base_units == amount for t in transfers):
             # Fallback: decode the transaction's logs (log position = event index).
+            await self._bg.acquire()
             transfers = parse_tx_info_logs(await self.source.get_transaction_info(tx), self.s.usdt_contract)
         return transfers
 

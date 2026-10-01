@@ -66,6 +66,7 @@ def make_settings(**overrides) -> Settings:
         tron_api_key="test-api-key-000000",
         alert_min_amount_usdt="500",
         stream_overlap_seconds=30,
+        reconcile_max_requests_per_second=1000,  # no background throttling in tests
     )
     base.update(overrides)
     return Settings(_env_file=None, **base)

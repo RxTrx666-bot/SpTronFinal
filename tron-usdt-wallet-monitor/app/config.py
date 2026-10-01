@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     tron_retry_max_seconds: float = 30.0
     # Global limits shared by every API caller (stream, scheduler, backfill).
     max_concurrent_api_requests: int = Field(default=5, ge=1)
-    max_requests_per_second: float = Field(default=10.0, gt=0)
+    max_requests_per_second: float = Field(default=8.0, gt=0)
 
     # ------------------------------------------------------------- Target
     root_wallet: str
@@ -51,15 +51,30 @@ class Settings(BaseSettings):
     # false = fastest: process events as soon as TronGrid sees them (unconfirmed).
     # true  = only solidified (irreversible) events; ~1 minute slower.
     require_confirmed: bool = False
-    stream_overlap_seconds: int = Field(default=30, ge=0)
+    # Each poll re-reads this much before the cursor (same-block events share a timestamp).
+    stream_overlap_seconds: int = Field(default=3, ge=0)
+    # Every STREAM_RECHECK_SECONDS, re-read the last STREAM_RECHECK_WINDOW_SECONDS
+    # once to catch events the API indexed late.  0 disables.
+    stream_recheck_seconds: int = Field(default=60, ge=0)
+    stream_recheck_window_seconds: int = Field(default=90, ge=0)
     stream_page_limit: int = Field(default=200, ge=1, le=200)
     stream_max_pages_per_poll: int = Field(default=50, ge=1)
 
     # ------------------------------------------------------------- Scheduler
+    # Background safety net.  It never gets more than
+    # RECONCILE_MAX_REQUESTS_PER_SECOND, so the live stream keeps priority on
+    # the API quota.  What it does:
+    #   * every RECONCILE_INTERVAL_SECONDS: re-check Wallet A's outgoing transfers
+    #     (one request) so no discovery is missed;
+    #   * once per newly discovered wallet: check its incoming transfers;
+    #   * every RECONCILE_FULL_SWEEP_HOURS (0 = never): re-check EVERY monitored
+    #     wallet - one request per wallet, expensive with thousands of wallets.
     reconcile_enabled: bool = True
-    # Minimum gap between two full sweeps over all monitored wallets.
     reconcile_interval_seconds: int = Field(default=300, ge=10)
-    # Workers used by the sweep (each holds at most one API request).
+    reconcile_full_sweep_hours: float = Field(default=0, ge=0)
+    reconcile_max_requests_per_second: float = Field(default=1.0, gt=0)
+    reconcile_check_new_wallets: bool = True
+    # Workers used by the scheduler (each holds at most one API request).
     reconcile_workers: int = Field(default=2, ge=1)
     reconcile_overlap_seconds: int = Field(default=120, ge=0)
 

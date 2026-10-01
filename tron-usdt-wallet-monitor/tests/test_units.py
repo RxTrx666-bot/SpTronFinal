@@ -109,7 +109,7 @@ def test_parse_tx_info_logs():
 
 
 def _client(handler, **overrides) -> TronGridClient:
-    s = make_settings(tron_retry_base_seconds=0.001, tron_retry_max_seconds=0.002, **overrides)
+    s = make_settings(**{"tron_retry_base_seconds": 0.001, "tron_retry_max_seconds": 0.002, **overrides})
     return TronGridClient(s, transport=httpx.MockTransport(handler))
 
 
@@ -224,3 +224,22 @@ def test_application_is_read_only():
         assert forbidden not in flat, forbidden
     endpoints = set(re.findall(r'"(/wallet[a-z]*/[a-z]+)"', src))
     assert endpoints <= {"/wallet/gettransactioninfobyid", "/wallet/triggerconstantcontract"}
+
+
+async def test_rate_limit_429_slows_every_caller():
+    import time
+
+    hits = []
+
+    def handler(req):
+        hits.append(time.monotonic())
+        if len(hits) == 1:
+            return httpx.Response(429)
+        return httpx.Response(200, json={"data": []})
+
+    c = _client(handler, tron_retry_base_seconds=0.3, tron_retry_max_seconds=0.3, max_requests_per_second=1000)
+    await asyncio.gather(c.get_transaction_events("ab" * 32), c.get_transaction_events("cd" * 32))
+    assert c.rate_limited == 1
+    # after the 429, no request (including the other caller's) went out during the cooldown
+    assert all(t - hits[0] >= 0.14 for t in hits[1:])
+    await c.close()

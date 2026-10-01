@@ -35,7 +35,13 @@ class TronSource(Protocol):
     """What the monitors need from the API (the fake in tests implements this too)."""
 
     async def get_contract_events(
-        self, *, min_timestamp_ms: int | None, fingerprint: str | None, only_confirmed: bool, limit: int
+        self,
+        *,
+        min_timestamp_ms: int | None,
+        fingerprint: str | None,
+        only_confirmed: bool,
+        limit: int,
+        max_timestamp_ms: int | None = None,
     ) -> tuple[list[dict[str, Any]], str | None]: ...
 
     async def get_account_trc20(
@@ -63,10 +69,21 @@ class RateLimiter:
         self._tokens = self.capacity
         self._updated = time.monotonic()
         self._lock = asyncio.Lock()
+        self._not_before = 0.0
+
+    def cooldown(self, seconds: float) -> None:
+        """Pause every caller (used when the API answers 429 Too Many Requests)."""
+        self._not_before = max(self._not_before, time.monotonic() + seconds)
+        self._tokens = 0.0
 
     async def acquire(self) -> None:
         async with self._lock:
             while True:
+                wait = self._not_before - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    self._updated = time.monotonic()
+                    continue
                 now = time.monotonic()
                 self._tokens = min(self.capacity, self._tokens + (now - self._updated) * self.rate)
                 self._updated = now
@@ -80,6 +97,7 @@ class _RetryAfter(Exception):
     def __init__(self, seconds: float, status: int) -> None:
         super().__init__(f"HTTP {status} (retry after {seconds:.1f}s)")
         self.seconds = seconds
+        self.status = status
 
 
 class TronGridClient:
@@ -100,6 +118,7 @@ class TronGridClient:
         # stats (read by /status and /health)
         self.requests = 0
         self.failures = 0
+        self.rate_limited = 0
         self.last_success_at: float | None = None
         self.last_latency_ms: float | None = None
 
@@ -144,17 +163,29 @@ class TronGridClient:
                 else:
                     delay = min(self.s.tron_retry_max_seconds, self.s.tron_retry_base_seconds * 2 ** (attempt - 1))
                     delay *= 0.5 + random.random() / 2  # jitter
+                if getattr(exc, "status", None) == 429 or isinstance(exc, _RetryAfter):
+                    # Rate limited: slow down ALL callers, not just this request.
+                    self.rate_limited += 1
+                    self._limiter.cooldown(delay)
                 log.warning("TRON API retry", path=_safe_path(path), attempt=attempt, delay=f"{delay:.1f}s", error=str(exc)[:120])
                 await asyncio.sleep(delay)
 
     # ------------------------------------------------------------- endpoints
     async def get_contract_events(
-        self, *, min_timestamp_ms: int | None, fingerprint: str | None, only_confirmed: bool, limit: int
+        self,
+        *,
+        min_timestamp_ms: int | None,
+        fingerprint: str | None,
+        only_confirmed: bool,
+        limit: int,
+        max_timestamp_ms: int | None = None,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """USDT ``Transfer`` events of the whole contract, oldest first."""
         params: dict[str, Any] = {"event_name": "Transfer", "order_by": "block_timestamp,asc", "limit": limit}
         if min_timestamp_ms is not None:
             params["min_block_timestamp"] = min_timestamp_ms
+        if max_timestamp_ms is not None:
+            params["max_block_timestamp"] = max_timestamp_ms
         if fingerprint:
             params["fingerprint"] = fingerprint
         if only_confirmed:
