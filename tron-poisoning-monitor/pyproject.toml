@@ -1,0 +1,17 @@
+[project]
+name = "tron-poisoning-monitor"
+version = "1.0.0"
+description = "Read-only TRON address-poisoning detection and successful-attack alert bot (USDT TRC-20)"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = ["E501", "E731", "B008", "B905"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]

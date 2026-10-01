@@ -1,0 +1,19 @@
+{
+  "case_id": "TRON-POISON-20261001-000002",
+  "event_type": "SUCCESSFUL_POISONING_EVENT",
+  "confidence": 100,
+  "similarity_pct": 77,
+  "poisoning_tx_observed": "YES",
+  "trace_hops": 4,
+  "latency": {
+    "block_to_detected_ms": 1,
+    "detected_to_analysis_complete_ms": 16,
+    "detected_to_telegram_ms": 49,
+    "wall_clock_block_processing_ms": 48.4,
+    "wall_clock_processing_to_alert_ms": 56.3,
+    "note": "Simulation: excludes network round-trips to the TRON API and Telegram."
+  },
+  "output_dir": "output/simulation",
+  "telegram_messages": 6,
+  "telegram_documents": 2
+}

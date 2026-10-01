@@ -1,0 +1,15 @@
+🔎 FUND TRACE — TRON-POISON-20261001-000002
+
+Victim TVictimx…SMZkyw
+  ↓ 25,000 USDT  45c7f2bbdb…
+Suspicious TLegitVx…BQWr2c
+  ↳ hop 1: 24,990 USDT → TPK2WQ6J…kPvzr8
+     b36181755a… · block 77520015 · 2026-10-01 13:03:57 UTC · confirmed
+    ↳ hop 2: 24,980 USDT → TWxvDJYP…jiFP7M
+       0fdb8cfd73… · block 77520030 · 2026-10-01 13:04:42 UTC · confirmed
+      ↳ hop 3: 24,970 USDT → TB8mdgod…CdvpYd
+         d603a2ffe7… · block 77520045 · 2026-10-01 13:05:27 UTC · confirmed
+        ↳ hop 4: 24,960 USDT → THMK7j1g…29Yuu7 — Binance-Hot (simulated public tag) (possible exchange/service attribution) [possible exchange/service attribution - branch ends]
+           bb8871a1c9… · block 77520060 · 2026-10-01 13:06:12 UTC · confirmed
+
+Trace follows on-chain transfers only; it does not establish who controls any address.

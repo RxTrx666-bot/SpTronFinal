@@ -1,0 +1,74 @@
+CASE ID:
+TRON-POISON-20261001-000002
+
+EVENT TYPE:
+SUCCESSFUL_POISONING_EVENT
+
+NETWORK:
+TRON
+
+TOKEN:
+USDT TRC-20 (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t)
+
+VICTIM:
+TVictimxw466QvBptjwLHfEf3ekBSMZkyw
+
+LEGITIMATE RECIPIENT:
+TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c
+
+SUSPICIOUS RECIPIENT:
+TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c
+
+AMOUNT:
+25,000 USDT
+
+TRANSACTION HASH:
+45c7f2bbdbfd5473b279d39132e4a4bff8b564c84e7d4ec30f1d0bbd1eb3163b
+
+BLOCK:
+77520000 (CONFIRMED)
+
+TIMESTAMP:
+2026-10-01 13:03:12 UTC
+
+SIMILARITY:
+77% (prefix 5 chars, suffix 4 chars after leading T)
+
+HISTORICAL TRANSACTIONS WITH LEGITIMATE RECIPIENT:
+12
+
+PREVIOUS VICTIM → LEGITIMATE TOTAL:
+287,950 USDT
+
+SUSPICIOUS RECIPIENT PREVIOUS ACTIVITY:
+Suspicious address had 7 USDT transfer(s) before the victim's payment
+
+POISONING TRANSACTION OBSERVED:
+YES
+
+FORWARDING ACTIVITY:
+24,990 USDT (99% of the received amount) forwarded in 1 transfer(s) within 60 min; first after 45 s
+
+TRACE:
+Victim
+→ Suspicious Address (TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c)
+→ Address 2 (hop 1): TPK2WQ6JpZqfYhhQJQXr8uq3S8cekPvzr8 (24,990 USDT, tx b36181755aafb0f3cf87e4e2aa9cec38bae7036982f3e1dd8c1cace9e53cb247)
+  → Address 3 (hop 2): TWxvDJYPNs6PcZuk25No8GEDY316jiFP7M (24,980 USDT, tx 0fdb8cfd739d32139392725bbd7bccea16de71866607bb2a023388365a37c8b5)
+    → Address 4 (hop 3): TB8mdgodffWQ3UWNjgEnYceM3sryCdvpYd (24,970 USDT, tx d603a2ffe7f1910dbb0a46d9d6c13ea764af26b8acbeeae03f237ccc3de87430)
+      → Address 5 (hop 4): THMK7j1g9DPSjm1AhUhEAiGJzdjw29Yuu7 (24,960 USDT, tx bb8871a1c99637b339fc9652716283e0f56276ae49e1b5b6292559f5cb42321f) [possible exchange/service attribution: Binance-Hot (simulated public tag)]
+
+TRONSCAN LINKS:
+Transaction: https://tronscan.org/#/transaction/45c7f2bbdbfd5473b279d39132e4a4bff8b564c84e7d4ec30f1d0bbd1eb3163b
+Victim: https://tronscan.org/#/address/TVictimxw466QvBptjwLHfEf3ekBSMZkyw
+Legitimate recipient: https://tronscan.org/#/address/TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c
+Suspicious recipient: https://tronscan.org/#/address/TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c
+Poisoning/dust transaction: https://tronscan.org/#/transaction/004f722e62de2db120282983eb26f8c69615e5aa08f7147f7b732547d0393559
+
+CONFIDENCE:
+100/100
+
+ASSESSMENT:
+⚠️ POSSIBLE SUCCESSFUL ADDRESS-POISONING ATTACK
+
+NOTE:
+Blockchain data shows addresses, transactions, amounts, timestamps and fund movements. It does not by itself prove who controls an address, anyone's identity, intent or criminal responsibility.

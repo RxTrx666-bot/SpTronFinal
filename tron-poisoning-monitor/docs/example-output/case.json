@@ -1,0 +1,395 @@
+{
+  "case_id": "TRON-POISON-20261001-000002",
+  "event_type": "SUCCESSFUL_POISONING_EVENT",
+  "assessment": "⚠️ POSSIBLE SUCCESSFUL ADDRESS-POISONING ATTACK",
+  "network": "TRON",
+  "token": "USDT",
+  "token_contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+  "token_decimals": 6,
+  "victim": "TVictimxw466QvBptjwLHfEf3ekBSMZkyw",
+  "legitimate_recipient": "TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c",
+  "suspicious_recipient": "TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c",
+  "amount": "25000",
+  "amount_base_units": "25000000000",
+  "transaction_hash": "45c7f2bbdbfd5473b279d39132e4a4bff8b564c84e7d4ec30f1d0bbd1eb3163b",
+  "block_number": 77520000,
+  "block_timestamp": "2026-10-01T13:03:12.332000+00:00",
+  "confirmation_status": "CONFIRMED",
+  "transaction_signer": "TVictimxw466QvBptjwLHfEf3ekBSMZkyw",
+  "confidence": 100,
+  "similarity": {
+    "legitimate": "TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c",
+    "candidate": "TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c",
+    "identical": false,
+    "prefix_match_length": 5,
+    "suffix_match_length": 4,
+    "fuzzy_prefix_match_length": 5,
+    "fuzzy_suffix_match_length": 4,
+    "effective_prefix": 5.0,
+    "effective_suffix": 4.0,
+    "prefix_similarity": 1.0,
+    "suffix_similarity": 0.8,
+    "overall_similarity": 0.2727,
+    "positional_similarity": 0.2727,
+    "hex_prefix_match": 7,
+    "coincidence_log10": -15.87,
+    "similarity_score": 0.7745,
+    "edge_rule": "both_edges",
+    "is_match": true,
+    "very_high": false,
+    "similarity_pct": 77
+  },
+  "legitimate_recipient_history": {
+    "transaction_count": 12,
+    "total_amount_base_units": "287950000000",
+    "first_seen": "2026-05-05T13:02:12.168000+00:00",
+    "last_seen": "2026-09-10T21:02:12.168000+00:00"
+  },
+  "suspicious_prior_tx_count": 0,
+  "poisoning_transaction_observed": "YES",
+  "forwarding_summary": "24,990 USDT (99% of the received amount) forwarded in 1 transfer(s) within 60 min; first after 45 s",
+  "score_breakdown": [
+    {
+      "key": "legit_used_2plus",
+      "points": 8,
+      "description": "Victim paid the legitimate recipient 12 times before",
+      "kind": "FACT"
+    },
+    {
+      "key": "legit_used_5plus",
+      "points": 4,
+      "description": "Legitimate recipient is a repeat counterparty (>= 5 payments)",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "legit_used_10plus",
+      "points": 3,
+      "description": "Legitimate recipient is a frequent counterparty (>= 10 payments)",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "legit_substantial_volume",
+      "points": 5,
+      "description": "Victim previously sent 287,950 USDT in total to the legitimate recipient",
+      "kind": "FACT"
+    },
+    {
+      "key": "legit_recent",
+      "points": 5,
+      "description": "Legitimate recipient was used within the last 180 days",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "recipient_new",
+      "points": 20,
+      "description": "Victim had never paid the suspicious recipient before",
+      "kind": "FACT"
+    },
+    {
+      "key": "similarity_both_edges",
+      "points": 30,
+      "description": "Suspicious address matches the legitimate address at both ends (5 leading + 4 trailing chars)",
+      "kind": "FACT"
+    },
+    {
+      "key": "amount_significant",
+      "points": 5,
+      "description": "Significant amount (25,000 USDT)",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "amount_large",
+      "points": 3,
+      "description": "Large amount (25,000 USDT)",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "amount_consistent_with_legit",
+      "points": 5,
+      "description": "Amount is consistent with the victim's earlier payments to the legitimate recipient",
+      "kind": "ANALYSIS"
+    },
+    {
+      "key": "prior_dust_to_victim",
+      "points": 15,
+      "description": "Suspicious address previously sent a dust / zero-value transfer involving the victim",
+      "kind": "FACT"
+    },
+    {
+      "key": "suspicious_multi_victim",
+      "points": 10,
+      "description": "Suspicious address sent dust transfers to 7 different wallets",
+      "kind": "FACT"
+    },
+    {
+      "key": "suspicious_fast_forwarding",
+      "points": 5,
+      "description": "Suspicious address forwarded 99% of the received amount shortly afterwards",
+      "kind": "FACT"
+    }
+  ],
+  "evidence": [
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Victim paid the legitimate recipient 12 times before",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Legitimate recipient is a repeat counterparty (>= 5 payments)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Legitimate recipient is a frequent counterparty (>= 10 payments)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Victim previously sent 287,950 USDT in total to the legitimate recipient",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Legitimate recipient was used within the last 180 days",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Victim had never paid the suspicious recipient before",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious address matches the legitimate address at both ends (5 leading + 4 trailing chars)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Significant amount (25,000 USDT)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Large amount (25,000 USDT)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "ANALYSIS",
+      "supports_poisoning": true,
+      "description": "Amount is consistent with the victim's earlier payments to the legitimate recipient",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious address previously sent a dust / zero-value transfer involving the victim",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIMILARITY",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious recipient resembles legitimate recipient: prefix 5 chars, suffix 4 chars (after leading T), score 77%",
+      "tx_hash": null,
+      "address": "TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c",
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "PRIOR_DUST",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Prior dust transfer suspicious → victim of 0.000001 USDT",
+      "tx_hash": "004f722e62de2db120282983eb26f8c69615e5aa08f7147f7b732547d0393559",
+      "address": "TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c",
+      "amount_base_units": "1",
+      "observed_at": "2026-09-26T13:02:12.168000+00:00"
+    },
+    {
+      "type": "MULTI_VICTIM_DUST",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious address sent dust (≤ 1 USDT) to 7 different wallet(s) before the victim's payment",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SUSPICIOUS_ACTIVITY",
+      "basis": "FACT",
+      "supports_poisoning": false,
+      "description": "Suspicious address had 7 USDT transfer(s) before the victim's payment",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "ACCOUNT_AGE",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious account was activated 2026-09-26 13:02 UTC (5.0 days before the payment)",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "FORWARDING",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "24,990 USDT (99% of the received amount) forwarded in 1 transfer(s) within 60 min; first after 45 s",
+      "tx_hash": "b36181755aafb0f3cf87e4e2aa9cec38bae7036982f3e1dd8c1cace9e53cb247",
+      "address": "TPK2WQ6JpZqfYhhQJQXr8uq3S8cekPvzr8",
+      "amount_base_units": "24990000000",
+      "observed_at": "2026-10-01T13:03:57.332000+00:00"
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious address sent dust transfers to 7 different wallets",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    },
+    {
+      "type": "SIGNAL",
+      "basis": "FACT",
+      "supports_poisoning": true,
+      "description": "Suspicious address forwarded 99% of the received amount shortly afterwards",
+      "tx_hash": null,
+      "address": null,
+      "amount_base_units": null,
+      "observed_at": null
+    }
+  ],
+  "fund_trace": [
+    {
+      "hop": 1,
+      "from": "TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c",
+      "to": "TPK2WQ6JpZqfYhhQJQXr8uq3S8cekPvzr8",
+      "amount": "24990",
+      "token": "USDT",
+      "transaction_hash": "b36181755aafb0f3cf87e4e2aa9cec38bae7036982f3e1dd8c1cace9e53cb247",
+      "block_number": 77520015,
+      "timestamp": "2026-10-01T13:03:57.332000+00:00",
+      "confirmation_status": "CONFIRMED",
+      "possible_attribution": null,
+      "attribution_source": null,
+      "note": null
+    },
+    {
+      "hop": 2,
+      "from": "TPK2WQ6JpZqfYhhQJQXr8uq3S8cekPvzr8",
+      "to": "TWxvDJYPNs6PcZuk25No8GEDY316jiFP7M",
+      "amount": "24980",
+      "token": "USDT",
+      "transaction_hash": "0fdb8cfd739d32139392725bbd7bccea16de71866607bb2a023388365a37c8b5",
+      "block_number": 77520030,
+      "timestamp": "2026-10-01T13:04:42.332000+00:00",
+      "confirmation_status": "CONFIRMED",
+      "possible_attribution": null,
+      "attribution_source": null,
+      "note": null
+    },
+    {
+      "hop": 3,
+      "from": "TWxvDJYPNs6PcZuk25No8GEDY316jiFP7M",
+      "to": "TB8mdgodffWQ3UWNjgEnYceM3sryCdvpYd",
+      "amount": "24970",
+      "token": "USDT",
+      "transaction_hash": "d603a2ffe7f1910dbb0a46d9d6c13ea764af26b8acbeeae03f237ccc3de87430",
+      "block_number": 77520045,
+      "timestamp": "2026-10-01T13:05:27.332000+00:00",
+      "confirmation_status": "CONFIRMED",
+      "possible_attribution": null,
+      "attribution_source": null,
+      "note": null
+    },
+    {
+      "hop": 4,
+      "from": "TB8mdgodffWQ3UWNjgEnYceM3sryCdvpYd",
+      "to": "THMK7j1g9DPSjm1AhUhEAiGJzdjw29Yuu7",
+      "amount": "24960",
+      "token": "USDT",
+      "transaction_hash": "bb8871a1c99637b339fc9652716283e0f56276ae49e1b5b6292559f5cb42321f",
+      "block_number": 77520060,
+      "timestamp": "2026-10-01T13:06:12.332000+00:00",
+      "confirmation_status": "CONFIRMED",
+      "possible_attribution": "Binance-Hot (simulated public tag)",
+      "attribution_source": "simulation public tag",
+      "note": "possible exchange/service attribution - branch ends"
+    }
+  ],
+  "tronscan": {
+    "transaction": "https://tronscan.org/#/transaction/45c7f2bbdbfd5473b279d39132e4a4bff8b564c84e7d4ec30f1d0bbd1eb3163b",
+    "victim": "https://tronscan.org/#/address/TVictimxw466QvBptjwLHfEf3ekBSMZkyw",
+    "legitimate_recipient": "https://tronscan.org/#/address/TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c",
+    "suspicious_recipient": "https://tronscan.org/#/address/TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c"
+  },
+  "latency_ms": {
+    "block_to_detected": 1,
+    "detected_to_analysed": 16,
+    "detected_to_alert": 49
+  },
+  "is_historical": false,
+  "detected_at": "2026-10-01T13:03:12.350825+00:00",
+  "disclaimer": "Blockchain data shows addresses, transactions, amounts, timestamps and fund movements. It does not by itself prove who controls an address, anyone's identity, intent or criminal responsibility."
+}

@@ -1,0 +1,4 @@
+{
+  "_comment": "Operator-curated public labels used for 'possible exchange/service attribution' in fund traces. Only add labels from reliable public sources. Format: \"<TRON address>\": {\"label\": \"...\", \"category\": \"exchange|service|flagged\"}. Labels are always presented as possible attribution, never as proof of ownership.",
+  "labels": {}
+}
