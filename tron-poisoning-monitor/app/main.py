@@ -192,6 +192,8 @@ class Application:
             lines.append(f"Solidified block: {self.confirmations.solid_block}")
         api = getattr(self.source, "requests", None)
         if api is not None:
+            per_day = int(api / max(time.time() - self.started_at, 1) * 86400)
+            lines.append(f"TRON API usage: ≈{per_day:,} requests/day at the current rate")
             lines.append(
                 f"TRON API requests: {api} · failures: {getattr(self.source, 'failures', 0)}"
                 + (f" · last error: {self.source.last_error}" if getattr(self.source, "last_error", None) else "")

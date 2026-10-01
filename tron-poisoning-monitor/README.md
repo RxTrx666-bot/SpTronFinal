@@ -459,7 +459,7 @@ What to expect in production:
 
 | Stage | Typical | Determined by |
 |---|---|---|
-| block produced → block readable via API | ~0.5-3 s | TRON block time (3 s), provider propagation, `BLOCK_POLL_INTERVAL_SECONDS` (1 s) |
+| block produced → block readable via API | ~0.5-3 s | TRON block time (3 s), provider propagation, head polls timed to the 3 s block schedule |
 | block fetched → analysis complete | ~10-50 ms | local DB work (measured 22 ms in the simulation) |
 | analysis → Telegram accepted | ~100-400 ms | Telegram API round-trip from your VPS |
 

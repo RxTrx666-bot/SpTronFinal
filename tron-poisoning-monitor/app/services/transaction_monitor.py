@@ -211,14 +211,28 @@ class BlockMonitor:
             n = batch[-1] + 1
         return processed
 
+    def next_poll_delay(self) -> float:
+        """Sleep until the next block is due instead of polling blindly.
+
+        TRON produces a block every 3 s.  Polling right when the next block should be
+        readable keeps detection latency the same while using ~1-2 head requests per
+        block instead of ~3.  If the block is late, fall back to BLOCK_POLL_INTERVAL_SECONDS.
+        """
+        minimum = self.s.block_poll_interval_seconds
+        if not self.last_block_ts_ms:
+            return minimum
+        due_ms = self.last_block_ts_ms + 3000 + self.s.block_arrival_margin_ms
+        wait = (due_ms - self.clock.now_ms()) / 1000
+        return min(3.0, wait) if wait > minimum else minimum
+
     async def run(self, stop: asyncio.Event) -> None:
         delay = self.s.block_poll_interval_seconds
         while not stop.is_set():
             try:
                 processed = await self.step()
-                delay = self.s.block_poll_interval_seconds
-                if processed:
-                    continue
+                if processed and self.head is not None and self.cursor is not None and self.cursor < self.head:
+                    continue  # still catching up
+                delay = self.next_poll_delay()
             except TronApiError as exc:
                 self.api_errors += 1
                 log.warning("TRON_API_UNAVAILABLE", component="block_monitor", api_status=exc.status, error=str(exc)[:150], retry_in=f"{delay:.1f}s")
