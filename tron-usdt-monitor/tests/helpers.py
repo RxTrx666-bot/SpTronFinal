@@ -33,7 +33,7 @@ def make_settings(**overrides: str) -> Settings:
         "WALLET_ADDRESS": WALLET,
         "USDT_CONTRACT": USDT,
         "DATABASE_URL": "sqlite://:memory:",
-        "HEARTBEAT_FILE": "/tmp/claude-0/tron-test-heartbeat",
+        "HEARTBEAT_FILE": "/tmp/tron-test-heartbeat",
         "ALERT_DIRECTIONS": "INCOMING,OUTGOING",
     }
     env.update(overrides)
