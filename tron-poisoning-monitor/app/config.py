@@ -89,7 +89,8 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------ monitor
     monitor_mode: str = Field("block", pattern="^(block|account)$")
-    block_poll_interval_seconds: float = 1.0
+    block_poll_interval_seconds: float = 0.5  # retry interval while the next block is late
+    block_arrival_margin_ms: int = 600  # first poll this long after a block is due (API propagation)
     block_prefetch: int = Field(3, ge=1, le=20)
     max_block_catchup: int = 1200  # larger gaps are filled through per-wallet history queries
     start_block_lag: int = 0  # start this many blocks behind head on first start
