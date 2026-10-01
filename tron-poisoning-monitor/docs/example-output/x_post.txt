@@ -1,0 +1,10 @@
+🚨 TRON ADDRESS-POISONING ALERT
+
+A wallet appears to have sent 25,000 USDT to a look-alike address previously unused by the victim.
+
+Legitimate recipient: TLegit9…SWr2c
+Suspicious recipient: TLegitV…QWr2c
+
+https://tronscan.org/#/transaction/45c7f2bbdbfd5473b279d39132e4a4bff8b564c84e7d4ec30f1d0bbd1eb3163b
+
+⚠️ Verify addresses before sending.

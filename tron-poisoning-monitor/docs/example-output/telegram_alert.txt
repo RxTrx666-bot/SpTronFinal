@@ -1,0 +1,43 @@
+🚨 SUCCESSFUL ADDRESS POISONING DETECTED
+
+Case: TRON-POISON-20261001-000002
+Network: TRON
+Token: USDT TRC-20
+
+Victim:
+TVictimxw466QvBptjwLHfEf3ekBSMZkyw
+
+Victim sent:
+25,000 USDT
+
+Legitimate historical recipient:
+TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c
+
+Suspicious recipient:
+TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c
+
+Recipient similarity: 77%  (prefix 5 / suffix 4 chars after T)
+Historical legitimate recipient: 12 previous transactions (287,950 USDT)
+Suspicious recipient history: 0 previous transaction(s) from victim
+Confidence: 100/100
+Block: 77520000 (confirmed)
+Block time: 2026-10-01 13:03:12 UTC
+
+Transaction: 45c7f2bbdbfd5473…
+Victim: TVictimx…SMZkyw
+Legitimate recipient: TLegit9d…TSWr2c
+Suspicious recipient: TLegitVx…BQWr2c
+
+Detection time: 2026-10-01 13:03:12.350 UTC
+Latency: block→detected 1 ms, detected→analysed 16 ms, detected→alert 49 ms
+
+Evidence:
+• Victim repeatedly used legitimate recipient (12 previous payments)
+• New recipient strongly resembles legitimate recipient
+• Victim sent funds to the look-alike recipient
+• Suspicious recipient had prior dust interaction: YES
+• Suspicious address sent dust (≤ 1 USDT) to 7 different wallet(s) before the victim's payment
+• Forwarding: 24,990 USDT (99% of the received amount) forwarded in 1 transfer(s) within 60 min; first after 45 s
+
+Status:
+⚠️ POSSIBLE SUCCESSFUL ADDRESS-POISONING ATTACK

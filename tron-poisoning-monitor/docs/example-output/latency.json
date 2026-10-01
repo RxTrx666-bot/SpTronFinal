@@ -1,0 +1,8 @@
+{
+  "block_to_detected_ms": 1,
+  "detected_to_analysis_complete_ms": 16,
+  "detected_to_telegram_ms": 49,
+  "wall_clock_block_processing_ms": 48.4,
+  "wall_clock_processing_to_alert_ms": 56.3,
+  "note": "Simulation: excludes network round-trips to the TRON API and Telegram."
+}
