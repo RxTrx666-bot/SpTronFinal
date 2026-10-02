@@ -345,7 +345,7 @@ def test_settings_tokens_and_admins():
     s = Settings(_env_file=None, telegram_admin_chat_id="11, 22", tokens=f"USDT:{USDT_C}:6,USDC:{A.LEGIT_B}:6")
     assert s.admin_ids == {11, 22} and s.alert_chat_ids == [11, 22]
     assert [t.symbol for t in s.token_list] == ["USDT", "USDC"]
-    assert s.units("dust_max_amount_usdt") == 1_000_000
+    assert s.units("dust_max_amount_usdt") == 10_000_000
     with pytest.raises(ValueError):
         Settings(_env_file=None, tokens="USDT:Tinvalid:6")
 

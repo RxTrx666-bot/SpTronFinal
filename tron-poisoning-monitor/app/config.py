@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     min_victim_amount_usdt: str = "1"  # victim payments below this are never SUCCESSFUL
     significant_amount_usdt: str = "1000"
     large_amount_usdt: str = "10000"
-    dust_max_amount_usdt: str = "1"  # incoming transfers <= this are treated as dust
+    dust_max_amount_usdt: str = "10"  # look-alike transfers <= this count as dust/planting (real attacks seen with 1.01 USDT)
     multi_victim_min: int = 3
     many_senders_min: int = 5
     fresh_address_max_prior_transfers: int = 3

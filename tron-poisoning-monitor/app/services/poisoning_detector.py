@@ -506,7 +506,8 @@ class PoisoningDetector:
             poisoning_tx_observed=dust_tri.value,
             initiator_address=tx.initiator_address,
             is_historical=historical,
-            history_complete=bool(wallet and wallet.history_status == HistoryStatus.COMPLETE.value),
+            # the "history scan in progress" note only applies to wallets added with /add
+            history_complete=wallet is None or wallet.status == WalletStatus.REMOVED.value or wallet.history_status == HistoryStatus.COMPLETE.value,
             investigation_status="PENDING",
             trace_status="PENDING",
             detected_at=detected,
