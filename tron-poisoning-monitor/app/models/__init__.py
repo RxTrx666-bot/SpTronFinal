@@ -257,7 +257,7 @@ class FundTrace(Base):
     to_label: Mapped[str | None] = mapped_column(String(200))
     to_label_category: Mapped[str | None] = mapped_column(String(32))
     to_label_source: Mapped[str | None] = mapped_column(String(64))
-    terminal_reason: Mapped[str | None] = mapped_column(String(64))
+    terminal_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TS, nullable=False)
 
     __table_args__ = (

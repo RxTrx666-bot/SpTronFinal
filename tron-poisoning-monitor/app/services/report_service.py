@@ -271,7 +271,7 @@ def trace_message(b: CaseBundle) -> str:
     hops = b.trace_hops()
     lines = [f"<b>🔎 FUND TRACE</b> — <code>{_h(ev.case_id)}</code>", ""]
     if not hops:
-        lines.append(f"No outgoing {ev.token_symbol} transfers from the suspicious address were found yet.")
+        lines.append(f"No significant outgoing {ev.token_symbol} transfers from the suspicious address yet - the funds may still be held there.")
         lines.append(f"<code>{ev.suspicious_recipient}</code>")
         return "\n".join(lines)
     lines.append(f"Victim <code>{short(ev.victim_wallet, 8, 6)}</code>")

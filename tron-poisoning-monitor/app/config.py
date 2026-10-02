@@ -179,6 +179,7 @@ class Settings(BaseSettings):
     trace_max_branches: int = Field(3, ge=1, le=20)
     trace_max_nodes: int = 60
     trace_min_amount_usdt: str = "1"
+    trace_min_share_pct: int = Field(5, ge=0, le=100)  # ignore outflows smaller than this % of the amount received
     trace_window_days: int = 30
     trace_retrace_minutes: int = 30  # periodic re-trace of recent incidents (0 = off)
 

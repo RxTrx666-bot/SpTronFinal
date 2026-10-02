@@ -288,3 +288,27 @@ async def test_diagnose_dry_run_and_apply_with_planting_transfer(make_app, capsy
     assert (await h.events())[0].event_type == SUCCESS
     await h.app.alerts.deliver_due()
     assert h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")
+
+
+async def test_trace_ignores_attacker_hub_side_transfers(make_app):
+    """Real trace: fake -> hub (19,900); hub only sends 10 USDT to new look-alikes -> funds still at the hub."""
+    h = await net_app(make_app)
+    await _replay_real_attack(h, h.chain.head_ts + 3000)
+    hub = address_from_seed("attacker-hub")
+    t = h.chain.head_ts
+    h.chain.send(A.POISON_SHORT, hub, 19_900 * USDT, ts_ms=t + 12_000)
+    for i in range(3):
+        new_fake = address_from_seed(f"new-fake-{i}")
+        other_victim = address_from_seed(f"other-victim-{i}")
+        h.chain.send(hub, new_fake, 10 * USDT, ts_ms=t + 600_000 + i * 60_000)
+        h.chain.send(new_fake, other_victim, 10 * USDT, ts_ms=t + 603_000 + i * 60_000)
+        h.chain.send(other_victim, address_from_seed(f"their-real-{i}"), 60_000 * USDT, ts_ms=t + 900_000 + i * 60_000)
+    await h.settle()
+    [ev] = await h.events(event_type=SUCCESS)
+    from app.services import report_service as rs
+
+    async with h.app.sf() as s:
+        b = await rs.load_bundle(s, ev.id)
+    hops = b.trace_hops()
+    assert [(x.hop, x.to_address) for x in hops] == [(1, hub)]
+    assert "funds not moved on yet" in hops[0].terminal_reason and "3 smaller transfer(s) ignored" in hops[0].terminal_reason

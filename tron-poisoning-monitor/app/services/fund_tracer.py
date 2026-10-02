@@ -56,7 +56,14 @@ class TraceResult:
         return max((h.hop for h in self.hops), default=0)
 
 
-def select_outflows(outs: list[TokenTransfer], amount_in: int, max_branches: int) -> list[TokenTransfer]:
+def select_outflows(outs: list[TokenTransfer], amount_in: int, max_branches: int, min_share_pct: int = 0) -> list[TokenTransfer]:
+    """Follow the outflows that plausibly carry the traced funds.
+
+    Outflows smaller than ``min_share_pct`` % of the received amount are ignored: attacker hubs send
+    many small transfers (e.g. 10 USDT to fund new look-alike addresses) that are not the stolen money.
+    """
+    floor = amount_in * min_share_pct // 100
+    outs = [o for o in outs if o.amount >= floor]
     covered = 0
     window: list[TokenTransfer] = []
     for o in sorted(outs, key=lambda t: (t.block_timestamp_ms, t.tx_hash)):
@@ -97,16 +104,26 @@ class FundTracer:
         min_amount = self.s.units("trace_min_amount_usdt", token.decimals)
         result = TraceResult(event_id=event_id, run=run)
         visited = {ev.victim_wallet, ev.suspicious_recipient}
-        frontier: list[tuple[str, int, int]] = [(ev.suspicious_recipient, ev.amount, to_ms(as_utc(ev.block_timestamp)))]
+        frontier: list[tuple[str, int, int, TraceHop | None]] = [(ev.suspicious_recipient, ev.amount, to_ms(as_utc(ev.block_timestamp)), None)]
+        share = self.s.trace_min_share_pct
         nodes = 1
         for hop in range(1, self.s.trace_hops + 1):
-            nxt: list[tuple[str, int, int]] = []
-            for addr, amount_in, since in frontier:
+            nxt: list[tuple[str, int, int, TraceHop | None]] = []
+            for addr, amount_in, since, came_from in frontier:
                 outs = await self._outflows(addr, token.contract, since, min_amount)
-                if not outs:
-                    result.notes.append(f"{addr}: no outgoing {token.symbol} transfers found after receipt")
+                chosen = select_outflows(outs, amount_in, self.s.trace_max_branches, share)
+                if not chosen:
+                    small = len(outs)
+                    why = (
+                        f"funds not moved on yet - no outgoing {token.symbol} transfer of at least {share}% of the "
+                        f"{format_amount(amount_in, token.decimals)} received"
+                        + (f" ({small} smaller transfer(s) ignored, e.g. funding of new look-alike addresses)" if small else "")
+                    )
+                    result.notes.append(f"{addr}: {why}")
+                    if came_from is not None and came_from.terminal is None:
+                        came_from.terminal = why
                     continue
-                for o in select_outflows(outs, amount_in, self.s.trace_max_branches):
+                for o in chosen:
                     if nodes >= self.s.trace_max_nodes:
                         result.notes.append("trace node limit reached")
                         break
@@ -124,20 +141,19 @@ class FundTracer:
                         terminal = "address already in trace"
                     elif hop == self.s.trace_hops:
                         terminal = "max hops reached"
-                    result.hops.append(
-                        TraceHop(
-                            hop=hop,
-                            parent=addr,
-                            transfer=o,
-                            block_number=(details.block_number if details else None) or o.block_number,
-                            confirmed=bool(details and details.confirmed) or o.confirmed,
-                            label=label,
-                            terminal=terminal,
-                        )
+                    th = TraceHop(
+                        hop=hop,
+                        parent=addr,
+                        transfer=o,
+                        block_number=(details.block_number if details else None) or o.block_number,
+                        confirmed=bool(details and details.confirmed) or o.confirmed,
+                        label=label,
+                        terminal=terminal,
                     )
+                    result.hops.append(th)
                     if terminal is None:
                         visited.add(o.to_address)
-                        nxt.append((o.to_address, o.amount, o.block_timestamp_ms))
+                        nxt.append((o.to_address, o.amount, o.block_timestamp_ms, th))
             frontier = nxt
             if not frontier or nodes >= self.s.trace_max_nodes:
                 break
