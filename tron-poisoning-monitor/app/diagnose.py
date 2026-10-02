@@ -21,10 +21,14 @@ from app.services.tron_service import TronGridClient, parse_block_transfers
 from app.utils.clock import from_ms
 
 
-async def rescore(s, sf, events, apply: bool) -> None:
+async def rescore(s, sf, events, apply: bool, planted: dict | None = None) -> None:
+    """Re-score recorded incidents with the current rules (dry run unless ``apply``)."""
+    from app.domain import Tri
+    from app.models import PoisoningEvidence
     from app.services.investigator import Investigator
     from app.services.notifier import Notifier
     from app.services.poisoning_detector import LockManager, PoisoningDetector, WalletRegistry
+    from app.utils.amounts import format_amount
     from app.utils.clock import SystemClock
 
     clock = SystemClock()
@@ -32,15 +36,36 @@ async def rescore(s, sf, events, apply: bool) -> None:
     detector = PoisoningDetector(s, sf, clock, WalletRegistry(), notifier, LockManager())
     inv = Investigator(s, sf, None, clock, detector, notifier, None)
     for ev in events:
-        async with sf() as db:
-            a = await inv.rescore(db, await db.get(PoisoningEvent, ev.id))
+        facts = []
+        for p in (planted or {}).get((ev.victim_wallet, ev.suspicious_recipient), []):
+            what = "a zero-value transfer from the victim" if p.amount == 0 else f"{format_amount(p.amount, 6)} USDT to the victim"
+            facts.append((f"planted:{p.transfer_key}", "PRIOR_DUST", "FACT", True,
+                          f"Before the payment, the look-alike appeared in the victim's history: {what}", {}, p))  # fmt: skip
+        if apply:
+            await inv.apply_findings(ev.id, facts, dust_tri=Tri.YES if facts else None, forwarding_summary=None, source="refresh")
+            async with sf() as db:
+                a = await inv.rescore(db, await db.get(PoisoningEvent, ev.id))
+        else:  # dry run: add the facts inside a transaction that is rolled back
+            async with sf() as db:
+                await db.begin()
+                row = await db.get(PoisoningEvent, ev.id)
+                for key, etype, kind, sup, desc, data, t in facts:
+                    db.add(PoisoningEvidence(event_id=ev.id, evidence_key=key, evidence_type=etype, kind=kind, supports=sup, description=desc,
+                                             tx_hash=t.tx_hash, address=t.from_address, amount=t.amount, observed_at=from_ms(t.block_timestamp_ms),
+                                             data=data, created_at=clock.now()))  # fmt: skip
+                if facts:
+                    row.poisoning_tx_observed = "YES"
+                await db.flush()
+                a = await inv.rescore(db, row)
+                await db.rollback()
         kind = a.event_type.value if a.event_type else "no incident"
-        print(f"With the CURRENT rules: {ev.case_id} scores {a.score}/100 -> {kind}" + (f" ({a.capped_reason})" if a.capped_reason else ""))
+        print(f"\nWith the CURRENT rules: {ev.case_id} scores {a.score}/100 -> {kind}" + (f" ({a.capped_reason})" if a.capped_reason else ""))
         for sig in a.signals:
             print(f"    {sig.points:+4d}  {sig.description}")
         if apply:
-            await inv.apply_findings(ev.id, [], dust_tri=None, forwarding_summary=None, source="refresh")
             print("    -> saved; if it now qualifies, the running bot sends the Telegram alert within seconds")
+        else:
+            print("    (dry run - add --apply to save it and send the alert)")
 
 
 async def diagnose(tx_hash: str, apply: bool = False) -> None:
@@ -69,8 +94,7 @@ async def diagnose(tx_hash: str, apply: bool = False) -> None:
         print(f"Bot memory starts at: {mem_start}")
         for ev in events:
             print(f"Bot incident for this tx: {ev.case_id} {ev.event_type} confidence {ev.confidence}/100")
-        if events:
-            await rescore(s, sf, events, apply)
+        planted: dict = {}
 
         for t in blk.transfers:
             victim, fake = t.from_address, t.to_address
@@ -111,9 +135,15 @@ async def diagnose(tx_hash: str, apply: bool = False) -> None:
                 print(f"  Bot saw the fake touch the victim's history: {contact.kind} at {contact.first_seen} (tx {contact.tx_hash})")
             else:
                 print("  Bot has NOT recorded a fake-token / TRX / dust contact from the fake to the victim (or it was before the bot started)")
-            dust = [h for h in hist if h.from_address == fake and h.to_address == victim]
-            first = f", first {from_ms(min(h.block_timestamp_ms for h in dust))}" if dust else ""
-            print(f"  Dust from fake to victim (real USDT): {len(dust)}{first}")
+            dust = [
+                h for h in hist if (h.from_address == fake and h.to_address == victim) or (h.from_address == victim and h.to_address == fake and h.amount == 0)
+            ]
+            planted[(victim, fake)] = dust
+            print(f"  Transfers that planted the fake in the victim's history (real USDT): {len(dust)}")
+            for h in sorted(dust, key=lambda x: x.block_timestamp_ms):
+                print(f"    {from_ms(h.block_timestamp_ms)}  {h.amount / 1e6:,.6f} USDT  {h.from_address} -> {h.to_address}  tx {h.tx_hash}")
+        if events:
+            await rescore(s, sf, events, apply, planted)
     finally:
         await c.close()
         await e.dispose()

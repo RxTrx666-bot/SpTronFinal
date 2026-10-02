@@ -79,10 +79,10 @@ class Investigator:
 
         facts: list[tuple[str, str, str, bool, str, dict, TokenTransfer | None]] = []
         dust_out = [t for t in before if t.from_address == sus and t.amount <= dust_max]
-        to_victim = [t for t in dust_out if t.to_address == victim]
+        to_victim = [t for t in before if t.from_address == sus and t.to_address == victim]  # any amount plants it
         zero_from_victim = [t for t in before if t.from_address == victim and t.to_address == sus and t.amount == 0]
         for t in to_victim + zero_from_victim:
-            d = "zero-value transfer victim → suspicious" if t.amount == 0 and t.from_address == victim else "dust transfer suspicious → victim"
+            d = "zero-value transfer victim → suspicious" if t.amount == 0 and t.from_address == victim else "transfer suspicious → victim"
             facts.append((f"dust:{t.transfer_key}", "PRIOR_DUST", "FACT", True,
                           f"Prior {d} of {format_amount(t.amount, token.decimals)} {token.symbol} at {from_ms(t.block_timestamp_ms):%Y-%m-%d %H:%M UTC}", {}, t))  # fmt: skip
         dust_recipients = {t.to_address for t in dust_out}

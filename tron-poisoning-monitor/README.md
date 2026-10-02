@@ -252,7 +252,7 @@ tron-poisoning-monitor/
 ├── migrations/001_initial_schema.sql · 002_network_wide.sql · 003_network_contacts.sql
 ├── data/address_labels.json       # operator-curated labels (optional)
 ├── docs/example-output/           # outputs of the final simulation
-├── tests/                         # 83 tests
+├── tests/                         # 85 tests
 ├── Dockerfile · docker-compose.yml · .env.example
 ├── requirements.txt · requirements-dev.txt · pyproject.toml · pytest.ini
 ```
@@ -468,8 +468,8 @@ pytest                                                    # SQLite
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tron_test pytest   # real PostgreSQL + SQL migrations
 ```
 
-Results at delivery: **83 passed on PostgreSQL 16** (each test starts from an empty schema built
-by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **82 passed /
+Results at delivery: **85 passed on PostgreSQL 16** (each test starts from an empty schema built
+by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **84 passed /
 1 skipped on SQLite** (the skipped test is the PostgreSQL-only schema check). `ruff check` is clean.
 
 | # | Required scenario | Test |

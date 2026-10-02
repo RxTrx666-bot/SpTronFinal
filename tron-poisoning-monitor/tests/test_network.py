@@ -248,3 +248,43 @@ async def test_diagnose_rescore_upgrades_old_candidate(make_app, capsys):
     assert ev.event_type == SUCCESS
     await h.app.alerts.deliver_due()
     assert h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")
+
+
+async def test_lookalike_planting_with_more_than_dust_amount(make_app):
+    """Variant seen in the real case: the look-alike sends a 'normal looking' small amount, not dust."""
+    h = await net_app(make_app)
+    start = h.chain.head_ts + 3000
+    h.chain.send(A.VICTIM, A.LEGIT, 10 * USDT, ts_ms=start)
+    plant = h.chain.send(A.POISON_SHORT, A.VICTIM, 5 * USDT, ts_ms=start + 36_000)  # 5 USDT > DUST_MAX (1 USDT)
+    h.chain.send(A.VICTIM, A.POISON_SHORT, 19_900 * USDT, ts_ms=start + 78_000)
+    await h.app.monitor.step()
+    await h.app.alerts.deliver_due()
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.poisoning_tx_observed == "YES"
+    assert "rapid_poisoning_sequence" in {s["key"] for s in ev.score_breakdown}
+    assert any(e.tx_hash == plant for e in await h.evidence(ev.id))
+    assert len(h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")) == 1
+
+
+async def test_diagnose_dry_run_and_apply_with_planting_transfer(make_app, capsys):
+    from app.config import Settings
+    from app.diagnose import rescore
+    from app.domain import TokenTransfer
+
+    h = await net_app(make_app, risk_weights='{"rapid_poisoning_sequence": 0}', dust_max_amount_usdt="0", notify_candidates=False)
+    start = h.chain.head_ts + 3000
+    h.chain.send(A.VICTIM, A.LEGIT, 10 * USDT, ts_ms=start)
+    h.chain.send(A.POISON_SHORT, A.VICTIM, 5 * USDT, ts_ms=start + 36_000)
+    h.chain.send(A.VICTIM, A.POISON_SHORT, 19_900 * USDT, ts_ms=start + 78_000)
+    await h.app.monitor.step()
+    [ev] = await h.events()
+    assert ev.event_type == "POISONING_CANDIDATE"
+    s = Settings(_env_file=None, **{**h.app.s.model_dump(), "risk_weights": "", "dust_max_amount_usdt": "1"})
+    plant = TokenTransfer("ab" * 32, USDT_C, A.POISON_SHORT, A.VICTIM, 5 * USDT, start + 36_000)
+    await rescore(s, h.app.sf, [ev], apply=False, planted={(A.VICTIM, A.POISON_SHORT): [plant]})
+    assert "SUCCESSFUL_POISONING_EVENT" in capsys.readouterr().out
+    assert (await h.events())[0].event_type == "POISONING_CANDIDATE"  # dry run changed nothing
+    await rescore(s, h.app.sf, [ev], apply=True, planted={(A.VICTIM, A.POISON_SHORT): [plant]})
+    assert (await h.events())[0].event_type == SUCCESS
+    await h.app.alerts.deliver_due()
+    assert h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")

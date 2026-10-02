@@ -113,6 +113,7 @@ class NetworkScanner:
 
         # --- payments to an address that earlier touched the payer's history: check against the payer's REAL history
         extra: dict[str, list[Candidate]] = {}
+        planted: dict[str, list[TokenTransfer]] = {}
         min_lookup = self.detector.network_min_alert
         probe = [t for t in plain if t.amount >= min_lookup]
         if probe and self.source is not None:
@@ -121,11 +122,23 @@ class NetworkScanner:
                 if (t.to_address, t.from_address) not in hits:
                     continue
                 self.stats["contact_hits"] += 1
-                cands = await self._history_candidates(t.from_address, t.to_address, t.block_timestamp_ms)
+                hist = await self._victim_history(t.from_address, t.block_timestamp_ms)
+                cands = self._candidates_from(hist or [], t.from_address, t.to_address)
                 if cands and self.detector.engine.matches(t.to_address, cands):
                     lookalike.append(t)
                     plain.remove(t)
                     extra[t.transfer_key] = cands
+                    planted[t.transfer_key] = self._planting_transfers(hist or [], t.from_address, t.to_address)
+        # look-alike payments found through the memory: also read the victim's recent history (rare, cheap)
+        # to find how the look-alike was planted - whatever the amount it sent.
+        if self.source is not None:
+            for t in lookalike:
+                if t.transfer_key in planted:
+                    continue
+                hist = await self._victim_history(t.from_address, t.block_timestamp_ms)
+                if hist:
+                    extra[t.transfer_key] = self._candidates_from(hist, t.from_address, t.to_address)
+                    planted[t.transfer_key] = self._planting_transfers(hist, t.from_address, t.to_address)
 
         events: list[int] = []
         if evidence:
@@ -138,7 +151,11 @@ class NetworkScanner:
                 try:
                     events += await with_db_retry(
                         lambda i=tx_id, x=t: self.detector.analyze(
-                            i, from_address=x.from_address, to_address=x.to_address, extra_candidates=extra.get(x.transfer_key)
+                            i,
+                            from_address=x.from_address,
+                            to_address=x.to_address,
+                            extra_candidates=extra.get(x.transfer_key),
+                            extra_contacts=planted.get(x.transfer_key),
                         ),
                         what="analyze",
                     )
@@ -158,43 +175,52 @@ class NetworkScanner:
                 out.update((a, b) for a, b in (await s.execute(q)).all())
         return out
 
-    async def _history_candidates(self, victim: str, fake: str, before_ms: int) -> list[Candidate]:
-        """The victim's real payment history before ``before_ms`` (TronGrid), as similarity candidates."""
-        now = self.clock.now().timestamp()
+    async def _victim_history(self, victim: str, before_ms: int) -> list[TokenTransfer] | None:
+        """The victim's recent USDT transfers (both directions) before ``before_ms``, from TronGrid."""
         cached = self._history_cache.get(victim)
-        if cached and now - cached[0] < 600:
-            return [c for c in cached[1] if c.address != fake]
+        if cached and cached[0] >= before_ms - 1 and self.clock.now().timestamp() - cached[2] < 600:
+            return [h for h in cached[1] if h.block_timestamp_ms < before_ms]
         self.stats["history_lookups"] += 1
-        stats: dict[str, RecipientStats] = {}
+        out: list[TokenTransfer] = []
         fp = None
         try:
             for _ in range(self.s.network_history_lookup_pages):
                 page, fp = await self.source.get_trc20_transfers(
                     victim, self.token.contract, max_timestamp_ms=before_ms - 1, order="desc", fingerprint=fp, priority=PRIORITY_DETECTION
                 )
-                for h in page:
-                    if h.from_address != victim or h.amount <= 0 or h.to_address == victim:
-                        continue
-                    ts = from_ms(h.block_timestamp_ms)
-                    st = stats.get(h.to_address)
-                    if st is None:
-                        stats[h.to_address] = RecipientStats(1, h.amount, ts, ts, h.amount, h.amount, h.amount)
-                    else:
-                        st.transaction_count += 1
-                        st.total_amount += h.amount
-                        st.first_seen, st.last_seen = min(st.first_seen, ts), max(st.last_seen, ts)
-                        st.largest_amount, st.smallest_amount = max(st.largest_amount, h.amount), min(st.smallest_amount, h.amount)
-                        st.average_amount = st.total_amount // st.transaction_count
+                out += page
                 if not fp or not page:
                     break
         except Exception as exc:  # noqa: BLE001 - fall back to the in-memory history
             log.warning("HISTORY_LOOKUP_FAILED", victim=victim, error=str(exc)[:120])
-            return []
-        cands = [Candidate(a, st) for a, st in stats.items()]
+            return None
         if len(self._history_cache) > 2000:
             self._history_cache.clear()
-        self._history_cache[victim] = (now, cands)
-        return [c for c in cands if c.address != fake]
+        self._history_cache[victim] = (before_ms, out, self.clock.now().timestamp())
+        return out
+
+    @staticmethod
+    def _candidates_from(hist: list[TokenTransfer], victim: str, fake: str) -> list[Candidate]:
+        stats: dict[str, RecipientStats] = {}
+        for h in hist:
+            if h.from_address != victim or h.amount <= 0 or h.to_address in (victim, fake):
+                continue
+            ts = from_ms(h.block_timestamp_ms)
+            st = stats.get(h.to_address)
+            if st is None:
+                stats[h.to_address] = RecipientStats(1, h.amount, ts, ts, h.amount, h.amount, h.amount)
+            else:
+                st.transaction_count += 1
+                st.total_amount += h.amount
+                st.first_seen, st.last_seen = min(st.first_seen, ts), max(st.last_seen, ts)
+                st.largest_amount, st.smallest_amount = max(st.largest_amount, h.amount), min(st.smallest_amount, h.amount)
+                st.average_amount = st.total_amount // st.transaction_count
+        return [Candidate(a, st) for a, st in stats.items()]
+
+    @staticmethod
+    def _planting_transfers(hist: list[TokenTransfer], victim: str, fake: str) -> list[TokenTransfer]:
+        """Transfers that put ``fake`` into the victim's history: fake -> victim (any amount), or 0-value victim -> fake."""
+        return [h for h in hist if (h.from_address == fake and h.to_address == victim) or (h.from_address == victim and h.to_address == fake and h.amount == 0)]
 
     def _matches(self, by_owner: dict[str, list[Candidate]], owner: str, address: str) -> bool:
         cands = by_owner.get(owner)
