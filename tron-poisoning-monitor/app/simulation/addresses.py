@@ -16,6 +16,7 @@ VICTIM_2 = "TVictimGeb9QfXhe5f1vXHcFDnXbuHFN7p"
 LEGIT = "TLegit9dwtq5H8YqVXiRsE7Y2zvRTSWr2c"
 POISON = "TLegitVxcwrWVZweDCtZXhgsJ8xpBQWr2c"  # prefix + suffix look-alike of LEGIT
 POISON_2 = "TLegitXJjajPAR1QXJitWmxfLANVvCWr2c"  # second look-alike of LEGIT
+POISON_SHORT = "TLegZBTmThKXvEsXtZCZaGs16kwn6PWr2c"  # first 4 chars incl. T + last 4 match LEGIT (common real pattern)
 PREFIX_ONLY = "TLegittHMDGDu8KXcgGAchjZ1wJ2xT6qZS"  # shares only the prefix with LEGIT
 SUFFIX_ONLY = "TQrHKkktwyCiFjAxFioC95bwNfsvUzWr2c"  # shares only the suffix with LEGIT
 LEGIT_B = "TExchGL7oSXA652ScKtq4FabQJrCv84FSx"

@@ -75,7 +75,7 @@ class Application:
         self.ingestor = Ingestor(settings, self.sf, source, self.clock, self.registry, self.detector)
         self.admin = AdminService(settings, self.sf, self.clock, self.registry, self.jobs_wakeup, audit=self.syslog.audit)
         self.x = XService(settings)
-        self.network = NetworkScanner(settings, self.sf, self.clock, self.registry, self.detector) if settings.network_wide else None
+        self.network = NetworkScanner(settings, self.sf, self.clock, self.registry, self.detector, source) if settings.network_wide else None
         if settings.monitor_mode == "account":
             self.monitor = AccountMonitor(settings, self.sf, source, self.clock, self.ingestor)
         else:
@@ -208,6 +208,10 @@ class Application:
             lines.append(
                 f"🌐 Network-wide detection: ON · {n['transfers']:,} USDT transfers scanned since start · "
                 f"{n['lookalike_payments']} look-alike payments analysed · {n['dust_evidence']} poisoning dust transfers seen"
+            )
+            lines.append(
+                f"Poisoning contacts (fake tokens / tiny TRX / dust / zero-value): {await self.network.contacts_count():,} remembered · "
+                f"{n['contact_hits']} payments to a contact checked · {n['history_lookups']} victim histories fetched"
             )
             lines.append(f"Payment memory: {await self.network.remembered_pairs():,} sender→recipient pairs ({self.s.network_memory_days} days)")
         else:

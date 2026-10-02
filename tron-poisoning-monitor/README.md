@@ -128,7 +128,8 @@ Base58 is case-sensitive, so case is never altered.
 | `coincidence_log10` | log10 chance that a random address shares these edges (58⁻ⁿ); 5+4 chars ≈ 10⁻¹⁶ |
 | `similarity_score` | weighted combination (weights configurable) |
 
-A match requires **both edges** (`MIN_PREFIX_MATCH` and `MIN_SUFFIX_MATCH`, default 4 + 4), or one
+A match requires **both edges** (`MIN_PREFIX_MATCH` and `MIN_SUFFIX_MATCH`, default 3 + 4 after the
+leading T, i.e. the first 4 characters a wallet displays and the last 4), or one
 very long edge (`SINGLE_EDGE_MIN_MATCH`, default 7), **and** `similarity_score ≥ MIN_SIMILARITY_SCORE`.
 A shared 4-character prefix alone, or a shared suffix alone, never matches.
 
@@ -170,6 +171,18 @@ Those cases stay CANDIDATE. Wording is always "possible" / "high-confidence"; th
 "confirmed scam".
 
 ---
+
+### The attack pattern the bot follows
+
+1. **Planting:** a look-alike address appears in the victim's history through one of:
+   a **fake "USDT" token** transfer, a **tiny TRX** transfer, **tiny real USDT**, or a **zero-value
+   USDT `transferFrom`**. The bot records every such "contact" on the whole network (kept 7 days).
+2. **Copying:** the victim later pays that look-alike real USDT. Because the payee touched the
+   victim's history before, the bot fetches the victim's **real payment history from TronGrid**
+   (it does not depend on how long the bot has been running), finds the address the fake imitates,
+   and runs the full scoring → 🚨 alert.
+3. The look-alike rule matches what wallets display: by default the **first 4 characters including
+   the `T`** (`MIN_PREFIX_MATCH=3` after the T) **and the last 4** (`MIN_SUFFIX_MATCH=4`).
 
 ### Network-wide mode in detail (`app/services/network_scanner.py`)
 
@@ -230,10 +243,10 @@ tron-poisoning-monitor/
 │   │   └── maintenance.py         # confirmations, pending recovery, system_logs, heartbeat
 │   ├── simulation/                # in-memory TRON chain, scenarios, end-to-end runner
 │   └── utils/                     # address, amounts (integer only), logging (redaction), clock, rate limiter
-├── migrations/001_initial_schema.sql · 002_network_wide.sql
+├── migrations/001_initial_schema.sql · 002_network_wide.sql · 003_network_contacts.sql
 ├── data/address_labels.json       # operator-curated labels (optional)
 ├── docs/example-output/           # outputs of the final simulation
-├── tests/                         # 74 tests
+├── tests/                         # 79 tests
 ├── Dockerfile · docker-compose.yml · .env.example
 ├── requirements.txt · requirements-dev.txt · pyproject.toml · pytest.ini
 ```
@@ -449,8 +462,8 @@ pytest                                                    # SQLite
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tron_test pytest   # real PostgreSQL + SQL migrations
 ```
 
-Results at delivery: **74 passed on PostgreSQL 16** (each test starts from an empty schema built
-by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **73 passed /
+Results at delivery: **79 passed on PostgreSQL 16** (each test starts from an empty schema built
+by `migrations/*.sql`, plus a check that the migrations match the ORM models) and **78 passed /
 1 skipped on SQLite** (the skipped test is the PostgreSQL-only schema check). `ruff check` is clean.
 
 | # | Required scenario | Test |

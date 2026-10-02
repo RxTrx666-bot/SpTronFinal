@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from app.config import Settings
 from app.database import create_engine, create_session_factory
-from app.models import HistoricalRecipient, PoisoningEvent
+from app.models import HistoricalRecipient, NetworkContact, PoisoningEvent
 from app.services.similarity import SimilarityConfig, SimilarityEngine
 from app.services.tron_service import TronGridClient, parse_block_transfers
 from app.utils.clock import from_ms
@@ -81,6 +81,12 @@ async def diagnose(tx_hash: str) -> None:
                     f"score {r.similarity_pct}%, rule={r.edge_rule}, counts as look-alike={r.is_match}"
                 )
                 print(f"      in bot memory: {'YES (' + str(mem.transaction_count) + 'x)' if mem else 'NO'}")
+            async with sf() as db:
+                contact = await db.get(NetworkContact, (fake, victim))
+            if contact:
+                print(f"  Bot saw the fake touch the victim's history: {contact.kind} at {contact.first_seen} (tx {contact.tx_hash})")
+            else:
+                print("  Bot has NOT recorded a fake-token / TRX / dust contact from the fake to the victim (or it was before the bot started)")
             dust = [h for h in hist if h.from_address == fake and h.to_address == victim]
             first = f", first {from_ms(min(h.block_timestamp_ms for h in dust))}" if dust else ""
             print(f"  Dust from fake to victim (real USDT): {len(dust)}{first}")

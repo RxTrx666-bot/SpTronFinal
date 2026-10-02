@@ -94,12 +94,30 @@ def assign_sequences(transfers: list[TokenTransfer]) -> list[TokenTransfer]:
     return out
 
 
+@dataclass(frozen=True)
+class Contact:
+    """An address 'touching' another wallet's history - the planting step of address poisoning.
+
+    kind: USDT_DUST (tiny real USDT), ZERO_VALUE (0-amount USDT transferFrom spoof),
+          TOKEN (transfer of another TRC-20 token - typically a fake "USDT"), TRX (tiny TRX).
+    """
+
+    toucher: str  # the address that ends up in the victim's history (the possible fake)
+    touched: str  # the wallet whose history it appears in (the possible victim)
+    kind: str
+    tx_hash: str
+    timestamp_ms: int
+    amount: int = 0
+    token_contract: str | None = None
+
+
 @dataclass
 class BlockData:
     number: int
     timestamp_ms: int
     transfers: list[TokenTransfer] = field(default_factory=list)
     fetched_at_ms: int = 0
+    contacts: list[Contact] = field(default_factory=list)
 
 
 @dataclass

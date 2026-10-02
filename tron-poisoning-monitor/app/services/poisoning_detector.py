@@ -37,6 +37,7 @@ from app.domain import AnalysisStatus, EventType, HistoryStatus, Tri, WalletStat
 from app.models import (
     AddressLabelCache,
     AddressSimilarityMatch,
+    NetworkContact,
     PoisoningEvent,
     PoisoningEvidence,
     Transaction,
@@ -107,10 +108,11 @@ class LocalEvidence:
     label: str | None = None
     label_category: str | None = None
     label_source: str | None = None
+    contact: NetworkContact | None = None  # fake token / tiny TRX / dust contact (network-wide)
 
     @property
     def dust_tri(self) -> Tri:
-        if self.dust:
+        if self.dust or self.contact is not None:
             return Tri.YES
         return Tri.NO if self.history_complete else Tri.UNKNOWN
 
@@ -207,7 +209,9 @@ class PoisoningDetector:
         self.stats = {"analysed": 0, "events": 0, "successful": 0, "candidates": 0, "attempts": 0}
 
     # ----------------------------------------------------------------- entry point
-    async def analyze(self, tx_id: int, *, from_address: str | None = None, to_address: str | None = None) -> list[int]:
+    async def analyze(
+        self, tx_id: int, *, from_address: str | None = None, to_address: str | None = None, extra_candidates: list[Candidate] | None = None
+    ) -> list[int]:
         """Analyse one stored transfer exactly once.  Returns ids of created incidents."""
         if from_address is None or to_address is None:
             async with self.sf() as s:
@@ -216,14 +220,14 @@ class PoisoningDetector:
                 return []
             from_address, to_address = row
         async with self.locks.hold([a for a in (from_address, to_address) if self.registry.is_monitored(a)]):
-            created, alerts = await self._analyze_locked(tx_id)
+            created, alerts = await self._analyze_locked(tx_id, extra_candidates)
         if alerts:
             self.notifier.wake()
         if created:
             self.jobs_wakeup.set()
         return created
 
-    async def _analyze_locked(self, tx_id: int) -> tuple[list[int], bool]:
+    async def _analyze_locked(self, tx_id: int, extra_candidates: list[Candidate] | None = None) -> tuple[list[int], bool]:
         started = self.clock.now()
         created: list[int] = []
         alerts = False
@@ -239,7 +243,7 @@ class PoisoningDetector:
             token = self.s.tokens_by_contract.get(tx.token_contract)
             if token is not None and tx.from_address != tx.to_address:
                 if self.registry.is_monitored(tx.from_address) or tx.source == "NETWORK":
-                    c, a = await self._outgoing(s, tx, token, started)
+                    c, a = await self._outgoing(s, tx, token, started, extra_candidates=extra_candidates)
                     created += c
                     alerts |= a
                 if self.registry.is_monitored(tx.to_address):
@@ -263,6 +267,9 @@ class PoisoningDetector:
             if ev.victim_wallet != victim and ev.event_type != EventType.POISONING_ATTEMPT.value:
                 others.add(ev.victim_wallet)
         label = await s.get(AddressLabelCache, suspicious)
+        contact = await s.get(NetworkContact, (suspicious, victim))
+        if contact is not None and as_utc(contact.first_seen) > ts:
+            contact = None
         complete = bool(wallet and wallet.history_status == HistoryStatus.COMPLETE.value and not wallet.history_truncated)
         return LocalEvidence(
             dust=dust,
@@ -271,9 +278,12 @@ class PoisoningDetector:
             label=label.label if label else None,
             label_category=label.category if label else None,
             label_source=label.source if label else None,
+            contact=contact,
         )
 
-    async def _outgoing(self, s: AsyncSession, tx: Transaction, token, started: datetime, *, historical: bool = False) -> tuple[list[int], bool]:
+    async def _outgoing(
+        self, s: AsyncSession, tx: Transaction, token, started: datetime, *, historical: bool = False, extra_candidates: list[Candidate] | None = None
+    ) -> tuple[list[int], bool]:
         victim, recipient = tx.from_address, tx.to_address
         ts = as_utc(tx.block_timestamp)
         wallet = await repo.get_wallet(s, victim)
@@ -299,6 +309,12 @@ class PoisoningDetector:
 
         if prior.transaction_count < 3:  # established counterparties (>= 3 payments) are not re-analysed
             cands = await self._candidates(s, victim, token.contract, recipient)
+            if extra_candidates:  # victim history fetched from the API (network-wide contact hit)
+                merged = {c.address: c for c in extra_candidates if c.address != recipient}
+                for c in cands:
+                    if c.address not in merged or c.stats.transaction_count > merged[c.address].stats.transaction_count:
+                        merged[c.address] = c
+                cands = list(merged.values())
             if cands:
                 local = await self.local_evidence(s, wallet, victim, recipient, token.contract, ts)
                 initiator_is_victim = None if tx.initiator_address is None else tx.initiator_address == victim
@@ -522,6 +538,19 @@ class PoisoningDetector:
                 s, ev.id, f"dust:{d.transfer_key}", "PRIOR_DUST", "FACT", True,
                 f"Prior {direction} of {format_amount(d.amount, token.decimals)} {token.symbol}", now,
                 tx_hash=d.tx_hash, address=tx.to_address, amount=d.amount, observed_at=as_utc(d.block_timestamp),
+            )  # fmt: skip
+        if local.contact is not None:
+            c = local.contact
+            what = {
+                "TOKEN": f"a transfer of another token (contract {c.token_contract}) - typically a fake 'USDT'",
+                "TRX": f"a tiny TRX transfer ({format_amount(c.amount, 6)} TRX)",
+                "USDT_DUST": f"a dust transfer of {format_amount(c.amount, token.decimals)} {token.symbol}",
+                "ZERO_VALUE": f"a zero-value {token.symbol} transfer",
+            }.get(c.kind, c.kind)
+            self._add_evidence(
+                s, ev.id, f"contact:{c.tx_hash}", "PRIOR_DUST", "FACT", True,
+                f"Before the payment, the suspicious address appeared in the victim's history via {what}", now,
+                tx_hash=c.tx_hash, address=tx.to_address, amount=c.amount, observed_at=as_utc(c.first_seen),
             )  # fmt: skip
         if local.other_victims:
             self._add_evidence(

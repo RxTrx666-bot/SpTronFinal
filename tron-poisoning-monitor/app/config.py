@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     network_memory_days: int = Field(7, ge=1, le=90)  # how long sender->recipient payments are remembered
     network_min_alert_usdt: str = "100"  # network-wide alerts only for payments of at least this amount
     network_prune_interval_minutes: int = 60
+    network_trx_dust_max: str = "1"  # TRX transfers up to this many TRX count as poisoning contacts
+    network_history_lookup_pages: int = Field(2, ge=1, le=10)  # x200 transfers fetched on a contact hit
 
     # ------------------------------------------------------------------ history
     history_days: int = 0  # 0 = as far back as the API allows
@@ -134,10 +136,10 @@ class Settings(BaseSettings):
     notify_attempts: bool = False
 
     # ------------------------------------------------------------------ similarity
-    min_prefix_match: int = 4  # characters after the mandatory leading "T"
+    min_prefix_match: int = 3  # characters after the mandatory leading "T" (3 = first 4 shown incl. T)
     min_suffix_match: int = 4
     single_edge_min_match: int = 7  # prefix-only / suffix-only match must be at least this long
-    min_similarity_score: float = 0.60
+    min_similarity_score: float = 0.50
     very_high_similarity: float = 0.85
     similarity_prefix_window: int = 5
     similarity_suffix_window: int = 5
@@ -217,6 +219,7 @@ class Settings(BaseSettings):
             "dust_max_amount_usdt",
             "trace_min_amount_usdt",
             "network_min_alert_usdt",
+            "network_trx_dust_max",
         ):
             parse_token_amount(getattr(self, name), 6)
         return self

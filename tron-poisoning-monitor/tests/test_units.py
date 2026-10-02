@@ -348,3 +348,23 @@ def test_settings_tokens_and_admins():
     assert s.units("dust_max_amount_usdt") == 1_000_000
     with pytest.raises(ValueError):
         Settings(_env_file=None, tokens="USDT:Tinvalid:6")
+
+
+def test_parse_block_contacts_fake_token_and_tiny_trx():
+    fake_hex = base58_to_hex(A.LEGIT_B)[2:]  # some other TRC-20 contract
+    block = {
+        "block_header": {"raw_data": {"number": 7, "timestamp": 1_790_000_000_000}},
+        "transactions": [
+            {"txID": "cc" * 32, "ret": [{"contractRet": "SUCCESS"}], "raw_data": {"contract": [{"type": "TransferContract", "parameter": {"value": {
+                "owner_address": base58_to_hex(A.POISON), "to_address": base58_to_hex(A.VICTIM), "amount": 1}}}]}},
+            {"txID": "dd" * 32, "raw_data": {"contract": [{"type": "TransferContract", "parameter": {"value": {
+                "owner_address": base58_to_hex(A.VICTIM), "to_address": base58_to_hex(A.LEGIT), "amount": 50_000_000}}}]}},
+        ],
+    }  # fmt: skip
+    infos = [{"id": "ee" * 32, "log": [{"address": fake_hex, "topics": [TRANSFER_TOPIC, _topic(A.POISON), _topic(A.VICTIM)], "data": f"{5:064x}"}]}]
+    blk = parse_block_transfers(7, block, infos, {USDT_C: 6}, trx_dust_max_sun=1_000_000)
+    kinds = {(c.kind, c.toucher, c.touched) for c in blk.contacts}
+    assert ("TRX", A.POISON, A.VICTIM) in kinds  # 0.000001 TRX dust
+    assert ("TOKEN", A.POISON, A.VICTIM) in kinds and ("TOKEN", A.VICTIM, A.POISON) in kinds  # fake token, both directions
+    assert not any(c.touched == A.LEGIT for c in blk.contacts)  # 50 TRX is a normal payment, not dust
+    assert blk.transfers == []

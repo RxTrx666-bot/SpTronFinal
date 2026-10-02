@@ -15,7 +15,7 @@ import time
 from dataclasses import replace
 
 from app.config import OFFICIAL_USDT_TRC20
-from app.domain import AccountInfo, AddressLabel, BlockData, TokenTransfer, TxDetails, assign_sequences
+from app.domain import AccountInfo, AddressLabel, BlockData, Contact, TokenTransfer, TxDetails, assign_sequences
 from app.services.tron_service import TronApiError
 
 USDT = OFFICIAL_USDT_TRC20
@@ -30,6 +30,8 @@ class SimulatedChain:
         self.blocks: dict[int, BlockData] = {}
         self.transfers: list[TokenTransfer] = []
         self.pending: list[TokenTransfer] = []
+        self.pending_trx: list[tuple[str, str, int, str]] = []
+        self.block_trx: dict[int, list[tuple[str, str, int, str]]] = {}
         self.tx_index: dict[str, TokenTransfer] = {}
         self.first_seen: dict[str, int] = {}
         self.labels: dict[str, AddressLabel] = {}
@@ -51,6 +53,12 @@ class SimulatedChain:
         )
         return h
 
+    def trx(self, frm: str, to: str, sun: int) -> str:
+        """A native TRX transfer (amount in sun) - attackers use tiny ones as poisoning dust."""
+        h = self._hash()
+        self.pending_trx.append((frm, to, sun, h))
+        return h
+
     def mine(self, ts_ms: int | None = None) -> BlockData:
         ts = ts_ms if ts_ms is not None else self.head_ts + 3000
         if ts <= self.head_ts:
@@ -60,6 +68,8 @@ class SimulatedChain:
         txs = [replace(t, block_number=self.head, block_timestamp_ms=ts) for t in self.pending]
         txs = assign_sequences(txs)
         self.pending = []
+        self.block_trx[self.head] = self.pending_trx
+        self.pending_trx = []
         for i, t in enumerate(txs):
             t = replace(t, log_index=0)
             txs[i] = t
@@ -112,7 +122,15 @@ class SimulatedChain:
             if number > self.head:
                 raise TronApiError(f"block {number} not available yet", retryable=True)
             return BlockData(number=number, timestamp_ms=self.head_ts, transfers=[])
-        return BlockData(number=number, timestamp_ms=blk.timestamp_ms, transfers=[t for t in blk.transfers if t.token_contract in contracts])
+        contacts = []
+        for t in blk.transfers:  # other TRC-20 tokens (e.g. fake USDT) are contacts, like the mainnet parser
+            if t.token_contract not in contracts and t.from_address != t.to_address:
+                contacts.append(Contact(t.from_address, t.to_address, "TOKEN", t.tx_hash, blk.timestamp_ms, t.amount, t.token_contract))
+                contacts.append(Contact(t.to_address, t.from_address, "TOKEN", t.tx_hash, blk.timestamp_ms, t.amount, t.token_contract))
+        for frm, to, sun, h in self.block_trx.get(number, []):
+            if sun <= 1_000_000:
+                contacts.append(Contact(frm, to, "TRX", h, blk.timestamp_ms, sun))
+        return BlockData(number=number, timestamp_ms=blk.timestamp_ms, transfers=[t for t in blk.transfers if t.token_contract in contracts], contacts=contacts)
 
     async def get_trc20_transfers(
         self,

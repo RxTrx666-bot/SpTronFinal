@@ -121,3 +121,62 @@ async def test_prune_forgets_old_network_memory_but_keeps_watched_and_incidents(
         txs = (await s.execute(select(Transaction))).scalars().all()
     assert left == {(A.VICTIM, A.POISON)}  # flagged look-alike kept; ordinary old pairs pruned
     assert len(txs) == 1 and len(await h.events()) == 1  # incident and its transaction kept
+
+
+# ----------------------------------------------------------------- real-world attack pattern
+async def _victim_with_old_history(make_app):
+    """Victim paid LEGIT several times BEFORE the bot started; the bot's memory knows nothing about it."""
+    from app.simulation.chain import SimulatedChain
+
+    chain = SimulatedChain()
+    t0 = int(__import__("time").time() * 1000) - 30 * 86_400_000
+    chain.head_ts = t0 - 3000
+    for i in range(4):
+        chain.send(A.VICTIM, A.LEGIT, (20_000 + i) * USDT, ts_ms=t0 + i * 86_400_000)
+    for _ in range(25):
+        chain.mine()
+    h = await make_app(chain=chain, network_wide=True)
+    await h.go_live()
+    return h
+
+
+async def test_fake_token_poisoning_detected_without_prior_memory(make_app):
+    h = await _victim_with_old_history(make_app)
+    fake_usdt = address_from_seed("fake-usdt-contract")
+    await h.send_live(A.POISON, A.VICTIM, 20_000 * USDT, token=fake_usdt)  # fake "USDT" shows the look-alike in history
+    tx = await h.send_live(A.VICTIM, A.POISON, 25_000 * USDT)
+    await h.app.alerts.deliver_due()
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.tx_hash == tx and ev.legitimate_recipient == A.LEGIT and ev.legit_tx_count == 4
+    assert ev.poisoning_tx_observed == "YES"
+    assert any("fake 'USDT'" in e.description for e in await h.evidence(ev.id))
+    assert len(h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")) == 1
+    assert h.app.network.stats["history_lookups"] == 1
+
+
+async def test_tiny_trx_poisoning_with_short_prefix_pattern(make_app):
+    h = await _victim_with_old_history(make_app)
+    h.chain.trx(A.POISON_SHORT, A.VICTIM, 1)  # 0.000001 TRX from a TLeg…Wr2c look-alike
+    h.chain.mine(h.chain.head_ts + 3000)
+    await h.app.monitor.step()
+    await h.send_live(A.VICTIM, A.POISON_SHORT, 25_000 * USDT)
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.suspicious_recipient == A.POISON_SHORT and ev.legitimate_recipient == A.LEGIT
+
+
+async def test_zero_value_transferfrom_poisoning_without_prior_memory(make_app):
+    h = await _victim_with_old_history(make_app)
+    await h.send_live(A.VICTIM, A.POISON, 0, initiator=address_from_seed("attacker"))  # transferFrom(victim, fake, 0)
+    await h.send_live(A.VICTIM, A.POISON, 25_000 * USDT)
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.poisoning_tx_observed == "YES"
+
+
+async def test_paying_someone_who_sent_a_test_transfer_is_not_flagged(make_app):
+    h = await _victim_with_old_history(make_app)
+    friend = address_from_seed("friend")
+    await h.send_live(friend, A.VICTIM, 1 * USDT)  # ordinary small test payment
+    await h.send_live(A.VICTIM, friend, 5_000 * USDT)
+    await h.settle()
+    assert await h.events() == []
+    assert h.app.network.stats["contact_hits"] == 1  # checked against the real history, no look-alike

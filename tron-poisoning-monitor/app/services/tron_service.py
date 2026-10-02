@@ -31,7 +31,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.domain import AccountInfo, AddressLabel, BlockData, TokenTransfer, TxDetails, assign_sequences
+from app.domain import AccountInfo, AddressLabel, BlockData, Contact, TokenTransfer, TxDetails, assign_sequences
 from app.utils.address import InvalidAddress, base58_to_hex, hex_to_base58, normalize_address, try_normalize
 from app.utils.logging import get_logger
 from app.utils.ratelimit import PRIORITY_LIVE, PriorityRateLimiter
@@ -85,12 +85,18 @@ def parse_block_transfers(
     block: dict[str, Any],
     infos: list[dict[str, Any]],
     contracts: dict[str, int],
+    trx_dust_max_sun: int = 1_000_000,
 ) -> BlockData:
     """Decode TRC-20 Transfer logs of the configured token contracts from one block.
 
     ``contracts`` maps Base58 contract -> decimals (only used to filter).
     Failed / reverted transactions are skipped (they emit no state change).
+
+    Also returns ``contacts``: Transfer events of OTHER TRC-20 contracts (fake "USDT"
+    tokens are the classic poisoning vehicle) and TRX transfers of at most
+    ``trx_dust_max_sun`` - both ways an attacker plants a look-alike in a wallet's history.
     """
+    contacts: list[Contact] = []
     header = (block.get("block_header") or {}).get("raw_data") or {}
     ts = int(header.get("timestamp") or 0)
     contract_hex = {}
@@ -102,11 +108,19 @@ def parse_block_transfers(
     owners: dict[str, str] = {}
     for tx in block.get("transactions") or []:
         try:
-            value = tx["raw_data"]["contract"][0]["parameter"]["value"]
+            contract = tx["raw_data"]["contract"][0]
+            value = contract["parameter"]["value"]
             owner = try_normalize(value.get("owner_address"))
+            txid = str(tx.get("txID", "")).lower()
             if owner:
-                owners[str(tx.get("txID", "")).lower()] = owner
-        except (KeyError, IndexError, TypeError):
+                owners[txid] = owner
+            if contract.get("type") == "TransferContract" and owner:
+                ok = ((tx.get("ret") or [{}])[0].get("contractRet") or "SUCCESS") == "SUCCESS"
+                to = try_normalize(value.get("to_address"))
+                amount = int(value.get("amount") or 0)
+                if ok and to and to != owner and 0 <= amount <= trx_dust_max_sun:
+                    contacts.append(Contact(owner, to, "TRX", txid, ts, amount))
+        except (KeyError, IndexError, TypeError, ValueError):
             continue
     transfers: list[TokenTransfer] = []
     for info in infos or []:
@@ -122,10 +136,19 @@ def parse_block_transfers(
             if addr.startswith("41") and len(addr) == 42:
                 addr = addr[2:]
             token = contract_hex.get(addr)
-            if token is None:
-                continue
             topics = lg.get("topics") or []
             if len(topics) < 3 or str(topics[0]).lower().removeprefix("0x") != TRANSFER_TOPIC:
+                continue
+            if token is None:  # another TRC-20 token: record as a contact in both directions
+                try:
+                    a, b = hex_to_base58(str(topics[1])), hex_to_base58(str(topics[2]))
+                    other = hex_to_base58(addr)
+                    amt = int(str(lg.get("data") or "0").removeprefix("0x")[:64] or "0", 16)
+                except (InvalidAddress, ValueError):
+                    continue
+                if a != b:
+                    contacts.append(Contact(a, b, "TOKEN", txid, ts_tx, amt, other))
+                    contacts.append(Contact(b, a, "TOKEN", txid, ts_tx, amt, other))
                 continue
             try:
                 frm = hex_to_base58(str(topics[1]))
@@ -149,7 +172,7 @@ def parse_block_transfers(
                     log_index=idx,
                 )
             )
-    return BlockData(number=number, timestamp_ms=ts, transfers=assign_sequences(transfers))
+    return BlockData(number=number, timestamp_ms=ts, transfers=assign_sequences(transfers), contacts=contacts)
 
 
 def parse_trc20_history(items: list[dict[str, Any]], contract: str, *, confirmed: bool) -> list[TokenTransfer]:
@@ -283,6 +306,7 @@ class TronGridClient:
         return int(data["block_header"]["raw_data"]["number"])
 
     async def get_block(self, number: int, contracts: dict[str, int]) -> BlockData:
+        trx_dust = self.s.units("network_trx_dust_max", 6)
         if self._head_cache and self._head_cache[0] == number:
             block_coro = asyncio.sleep(0, result=self._head_cache[1])
         else:
@@ -293,7 +317,7 @@ class TronGridClient:
             raise TronApiError(f"block {number} not available yet", retryable=True)
         if isinstance(infos, dict):  # empty block returns {}
             infos = []
-        return parse_block_transfers(number, block, infos, contracts)
+        return parse_block_transfers(number, block, infos, contracts, trx_dust)
 
     # ------------------------------------------------------------------ account history
     async def get_trc20_transfers(

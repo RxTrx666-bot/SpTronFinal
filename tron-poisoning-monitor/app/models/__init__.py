@@ -359,3 +359,20 @@ class AddressLabelCache(Base):
     category: Mapped[str | None] = mapped_column(String(32))
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(TS, nullable=False)
+
+
+class NetworkContact(Base):
+    """Network-wide: address ``toucher`` appeared in ``touched``'s history via dust / fake token / tiny TRX."""
+
+    __tablename__ = "network_contacts"
+    toucher: Mapped[str] = mapped_column(String(34), primary_key=True)
+    touched: Mapped[str] = mapped_column(String(34), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_contract: Mapped[str | None] = mapped_column(String(34))
+    amount: Mapped[int] = mapped_column(Amount, nullable=False)
+    tx_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(TS, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(TS, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __table_args__ = (Index("ix_contacts_last_seen", "last_seen"),)
