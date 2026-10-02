@@ -100,7 +100,14 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         print(__doc__)
         return 2
-    asyncio.run(diagnose(argv[0].strip().lower().removeprefix("0x")))
+    raw = argv[0].strip().lower().rstrip("/")
+    tx = raw.rsplit("/", 1)[-1].removeprefix("0x")  # accepts a pasted Tronscan link too
+    if len(tx) != 64 or any(ch not in "0123456789abcdef" for ch in tx):
+        print(f"'{argv[0]}' is not a transaction hash.")
+        print("Use the 64-character hash of the victim's payment to the fake address (or its Tronscan link), e.g.:")
+        print("  python -m app.diagnose 4f2a9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7e81b")
+        return 2
+    asyncio.run(diagnose(tx))
     return 0
 
 
