@@ -110,6 +110,12 @@ class LocalEvidence:
     label_source: str | None = None
     contact: NetworkContact | None = None  # fake token / tiny TRX / dust contact (network-wide)
 
+    def dust_times(self) -> list[datetime]:
+        times = [as_utc(d.block_timestamp) for d in self.dust]
+        if self.contact is not None:
+            times += [as_utc(self.contact.first_seen), as_utc(self.contact.last_seen)]
+        return times
+
     @property
     def dust_tri(self) -> Tri:
         if self.dust or self.contact is not None:
@@ -179,6 +185,7 @@ class DecisionEngine:
                 other_victims_paid=len(local.other_victims),
                 label_category=local.label_category,
                 subsequent_payments=subsequent_payments,
+                dust_times=local.dust_times(),
             )
             a = self.risk.assess(ctx)
             d = Decision(legit=c, similarity=r, assessment=a, context=ctx, matches=matches)
@@ -207,6 +214,12 @@ class PoisoningDetector:
         self.network_min_alert = settings.units("network_min_alert_usdt", settings.primary_token.decimals)
         self.significant = settings.units("significant_amount_usdt", settings.primary_token.decimals)
         self.stats = {"analysed": 0, "events": 0, "successful": 0, "candidates": 0, "attempts": 0}
+
+    def alerts_allowed(self, wallet: WatchedWallet | None, amount: int) -> bool:
+        """Watched (/add) wallets: when ACTIVE.  Any other wallet: network-wide mode and amount >= NETWORK_MIN_ALERT_USDT."""
+        if wallet is not None and wallet.status != WalletStatus.REMOVED.value:
+            return wallet.status == WalletStatus.ACTIVE.value
+        return self.s.network_wide and amount >= self.network_min_alert
 
     # ----------------------------------------------------------------- entry point
     async def analyze(
@@ -567,12 +580,9 @@ class PoisoningDetector:
         alerts = False
         if not historical:
             success = event_type == EventType.SUCCESSFUL_POISONING_EVENT
-            if wallet is not None and wallet.status != WalletStatus.REMOVED.value:
-                active = wallet.status == WalletStatus.ACTIVE.value  # watched wallet (/add)
-                investigate = True
-            else:  # network-wide detection on a wallet nobody added
-                active = self.s.network_wide and tx.amount >= self.network_min_alert
-                investigate = success or tx.amount >= self.significant
+            active = self.alerts_allowed(wallet, tx.amount)
+            watched = wallet is not None and wallet.status != WalletStatus.REMOVED.value
+            investigate = watched or success or tx.amount >= self.significant
             if investigate:
                 await repo.enqueue_job(s, "INVESTIGATE", str(ev.id), now)
             else:

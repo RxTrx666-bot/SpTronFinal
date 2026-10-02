@@ -31,6 +31,7 @@ DEFAULT_RISK_WEIGHTS: dict[str, int] = {
     "legit_substantial_volume": 5,  # victim -> legit total >= LEGIT_SUBSTANTIAL_TOTAL_USDT
     "legit_recent": 5,  # legit used within LEGIT_RECENT_DAYS
     "recipient_new": 20,  # victim never paid the suspicious address before
+    "rapid_poisoning_sequence": 30,  # paid real -> look-alike dusted within minutes -> paid look-alike soon after
     "suspicious_previously_flagged": 25,  # repeat payment to an address already flagged as possible poisoning
     "similarity_both_edges": 30,  # prefix AND suffix match the configured minimums
     "similarity_single_edge": 10,  # only one edge matches (needs SINGLE_EDGE_MIN_MATCH)
@@ -132,7 +133,7 @@ class Settings(BaseSettings):
     alert_retry_base_seconds: float = 1.0
     alert_retry_max_seconds: float = 120.0
     send_startup_message: bool = True
-    notify_candidates: bool = False
+    notify_candidates: bool = True  # also send below-threshold look-alike payments (marked POSSIBLE)
     notify_attempts: bool = False
 
     # ------------------------------------------------------------------ similarity
@@ -169,6 +170,8 @@ class Settings(BaseSettings):
     forward_min_ratio_pct: int = 50
     risk_weights: str = ""  # JSON object merged over DEFAULT_RISK_WEIGHTS
     investigation_max_transfers: int = 1000
+    rapid_dust_minutes: int = 120  # dust from the look-alike this soon after the victim paid the real address
+    rapid_payment_hours: int = 48  # ... and the victim paid the look-alike this soon after paying the real address
 
     # ------------------------------------------------------------------ tracing
     trace_enabled: bool = True

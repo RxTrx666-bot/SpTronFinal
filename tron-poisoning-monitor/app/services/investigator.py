@@ -174,7 +174,7 @@ class Investigator:
             ev.updated_at = now
             upgraded = old_type != EventType.SUCCESSFUL_POISONING_EVENT.value and ev.event_type == EventType.SUCCESSFUL_POISONING_EVENT.value
             wallet = await repo.get_wallet(s, ev.victim_wallet)
-            active = bool(wallet and wallet.status == "ACTIVE") and not ev.is_historical
+            active = self.detector.alerts_allowed(wallet, ev.amount) and not ev.is_historical
             if upgraded:
                 log.warning("CANDIDATE_UPGRADED", case=ev.case_id, victim=ev.victim_wallet, tx=ev.tx_hash, confidence=ev.confidence, previous=old_score)
                 if active:
@@ -234,6 +234,7 @@ class Investigator:
             distinct_senders=data("MANY_SENDERS", "count"),
             forwarded_pct=data("FORWARDING", "pct"),
             label_category=data("LABEL", "category"),
+            dust_times=[as_utc(e.observed_at) for e in evidence if e.evidence_type == "PRIOR_DUST" and e.observed_at],
         )
         return self.detector.engine.risk.assess(ctx)
 

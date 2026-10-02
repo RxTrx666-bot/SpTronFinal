@@ -180,3 +180,71 @@ async def test_paying_someone_who_sent_a_test_transfer_is_not_flagged(make_app):
     await h.settle()
     assert await h.events() == []
     assert h.app.network.stats["contact_hits"] == 1  # checked against the real history, no look-alike
+
+
+# ----------------------------------------------------------------- replay of the real missed attack (2026-10-02)
+async def _replay_real_attack(h, start_ms):
+    """05:40:45 victim pays REAL (test payment) · 05:41:21 fake dusts victim · 05:42:03 victim pays FAKE 19,900 USDT."""
+    h.chain.send(A.VICTIM, A.LEGIT, 10 * USDT, ts_ms=start_ms)
+    h.chain.send(A.POISON_SHORT, A.VICTIM, 1, ts_ms=start_ms + 36_000)
+    tx = h.chain.send(A.VICTIM, A.POISON_SHORT, 19_900 * USDT, ts_ms=start_ms + 78_000)
+    await h.app.monitor.step()
+    await h.app.alerts.deliver_due()
+    return tx
+
+
+async def test_real_attack_replay_test_payment_dust_main_payment(make_app):
+    h = await net_app(make_app)
+    tx = await _replay_real_attack(h, h.chain.head_ts + 3000)
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.tx_hash == tx and ev.legitimate_recipient == A.LEGIT
+    keys = {s["key"] for s in ev.score_breakdown}
+    assert "rapid_poisoning_sequence" in keys and "legit_weak_relationship" not in keys
+    assert len(h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")) == 1
+
+
+async def test_real_attack_replay_when_real_payment_predates_the_bot(make_app):
+    from app.simulation.chain import SimulatedChain
+
+    chain = SimulatedChain()
+    now = int(__import__("time").time() * 1000)
+    chain.head_ts = now - 600_000
+    chain.send(A.VICTIM, A.LEGIT, 10 * USDT, ts_ms=now - 300_000)  # before the bot starts
+    for _ in range(25):
+        chain.mine()
+    h = await make_app(chain=chain, network_wide=True)
+    await h.go_live()
+    h.chain.send(A.POISON_SHORT, A.VICTIM, 1, ts_ms=h.chain.head_ts + 3000)
+    await h.app.monitor.step()
+    await h.send_live(A.VICTIM, A.POISON_SHORT, 19_900 * USDT)
+    await h.app.alerts.deliver_due()
+    [ev] = await h.events(event_type=SUCCESS)
+    assert ev.legitimate_recipient == A.LEGIT
+    assert len(h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")) == 1
+
+
+async def test_below_threshold_lookalike_payment_is_still_sent_as_possible(make_app):
+    h = await net_app(make_app, confidence_threshold=99)
+    await h.send_live(A.VICTIM, A.LEGIT, 30_000 * USDT)
+    await h.send_live(A.VICTIM, A.POISON, 25_000 * USDT)
+    await h.app.alerts.deliver_due()
+    assert h.sent("POSSIBLE ADDRESS POISONING")
+
+
+async def test_diagnose_rescore_upgrades_old_candidate(make_app, capsys):
+    from app.diagnose import rescore
+
+    # recorded under the OLD rules (no timing signal) -> only a candidate, like the real case
+    h = await net_app(make_app, risk_weights='{"rapid_poisoning_sequence": 0}', notify_candidates=False)
+    await _replay_real_attack(h, h.chain.head_ts + 3000)
+    [ev] = await h.events()
+    assert ev.event_type == "POISONING_CANDIDATE"
+    from app.config import Settings
+
+    s = Settings(_env_file=None, **{**h.app.s.model_dump(), "risk_weights": ""})
+    await rescore(s, h.app.sf, [ev], apply=True)
+    assert "scores" in capsys.readouterr().out
+    [ev] = await h.events()
+    assert ev.event_type == SUCCESS
+    await h.app.alerts.deliver_due()
+    assert h.sent("SUCCESSFUL ADDRESS POISONING DETECTED")

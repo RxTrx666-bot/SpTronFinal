@@ -1,9 +1,9 @@
 """Explain why a given transaction was (or was not) detected as address poisoning.
 
 Usage (on the server):
-    docker compose exec monitor python -m app.diagnose <TX_HASH>
-
-Read-only: it only queries the TRON API and the bot's database.
+    docker compose exec monitor python -m app.diagnose <TX_HASH>           read-only
+    docker compose exec monitor python -m app.diagnose <TX_HASH> --apply   also re-score the recorded
+        incident with the current rules and, if it now qualifies, send the Telegram alert
 """
 
 from __future__ import annotations
@@ -21,7 +21,29 @@ from app.services.tron_service import TronGridClient, parse_block_transfers
 from app.utils.clock import from_ms
 
 
-async def diagnose(tx_hash: str) -> None:
+async def rescore(s, sf, events, apply: bool) -> None:
+    from app.services.investigator import Investigator
+    from app.services.notifier import Notifier
+    from app.services.poisoning_detector import LockManager, PoisoningDetector, WalletRegistry
+    from app.utils.clock import SystemClock
+
+    clock = SystemClock()
+    notifier = Notifier(s, clock)
+    detector = PoisoningDetector(s, sf, clock, WalletRegistry(), notifier, LockManager())
+    inv = Investigator(s, sf, None, clock, detector, notifier, None)
+    for ev in events:
+        async with sf() as db:
+            a = await inv.rescore(db, await db.get(PoisoningEvent, ev.id))
+        kind = a.event_type.value if a.event_type else "no incident"
+        print(f"With the CURRENT rules: {ev.case_id} scores {a.score}/100 -> {kind}" + (f" ({a.capped_reason})" if a.capped_reason else ""))
+        for sig in a.signals:
+            print(f"    {sig.points:+4d}  {sig.description}")
+        if apply:
+            await inv.apply_findings(ev.id, [], dust_tri=None, forwarding_summary=None, source="refresh")
+            print("    -> saved; if it now qualifies, the running bot sends the Telegram alert within seconds")
+
+
+async def diagnose(tx_hash: str, apply: bool = False) -> None:
     s = Settings()
     c = TronGridClient(s)
     eng = SimilarityEngine(SimilarityConfig.from_settings(s))
@@ -47,6 +69,8 @@ async def diagnose(tx_hash: str) -> None:
         print(f"Bot memory starts at: {mem_start}")
         for ev in events:
             print(f"Bot incident for this tx: {ev.case_id} {ev.event_type} confidence {ev.confidence}/100")
+        if events:
+            await rescore(s, sf, events, apply)
 
         for t in blk.transfers:
             victim, fake = t.from_address, t.to_address
@@ -107,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Use the 64-character hash of the victim's payment to the fake address (or its Tronscan link), e.g.:")
         print("  python -m app.diagnose 4f2a9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7e81b")
         return 2
-    asyncio.run(diagnose(tx))
+    asyncio.run(diagnose(tx, apply="--apply" in argv[1:]))
     return 0
 
 

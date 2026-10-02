@@ -39,6 +39,8 @@ class RiskConfig:
     many_senders_min: int = 5
     fresh_address_max_prior_transfers: int = 3
     forward_min_ratio_pct: int = 50
+    rapid_dust_minutes: int = 120
+    rapid_payment_hours: int = 48
 
     @classmethod
     def from_settings(cls, s) -> RiskConfig:
@@ -58,6 +60,8 @@ class RiskConfig:
             many_senders_min=s.many_senders_min,
             fresh_address_max_prior_transfers=s.fresh_address_max_prior_transfers,
             forward_min_ratio_pct=s.forward_min_ratio_pct,
+            rapid_dust_minutes=s.rapid_dust_minutes,
+            rapid_payment_hours=s.rapid_payment_hours,
         )
 
 
@@ -92,6 +96,7 @@ class RiskContext:
     forwarded_pct: int | None = None
     label_category: str | None = None
     subsequent_payments: int | None = None  # retrospective only: later payments to the same address
+    dust_times: list[datetime] = field(default_factory=list)  # when the look-alike touched the victim (dust / contacts)
 
 
 @dataclass
@@ -120,6 +125,19 @@ class RiskEngine:
     def w(self, key: str) -> int:
         return int(self.cfg.weights.get(key, 0))
 
+    def rapid_sequence(self, ctx: RiskContext) -> tuple[int, int] | None:
+        """(seconds legit payment -> first look-alike contact, seconds legit payment -> victim's payment) or None."""
+        last = ctx.legit.last_seen
+        if last is None or not ctx.dust_times:
+            return None
+        pay_s = (ctx.tx_time - last).total_seconds()
+        if pay_s < 0 or pay_s > self.cfg.rapid_payment_hours * 3600:
+            return None
+        after = [(t - last).total_seconds() for t in ctx.dust_times if last <= t <= ctx.tx_time]
+        if not after or min(after) > self.cfg.rapid_dust_minutes * 60:
+            return None
+        return int(min(after)), int(pay_s)
+
     def legit_is_established(self, legit: RecipientStats) -> bool:
         return legit.transaction_count >= self.cfg.min_legit_tx_count or legit.total_amount >= self.cfg.min_legit_total
 
@@ -129,6 +147,7 @@ class RiskEngine:
         d = ctx.decimals
         fmt = lambda units: f"{format_amount(units, d)} {ctx.symbol}"  # noqa: E731
         lg, sp, sim = ctx.legit, ctx.suspicious_prior, ctx.similarity
+        rapid = self.rapid_sequence(ctx)
 
         # -- historical relationship with the legitimate recipient --------------
         if lg.transaction_count >= 2:
@@ -141,8 +160,18 @@ class RiskEngine:
             add("legit_substantial_volume", f"Victim previously sent {fmt(lg.total_amount)} in total to the legitimate recipient", "FACT")
         if lg.last_seen and ctx.tx_time - lg.last_seen <= timedelta(days=self.cfg.legit_recent_days):
             add("legit_recent", f"Legitimate recipient was used within the last {self.cfg.legit_recent_days} days")
-        if lg.transaction_count <= 1 and lg.total_amount < self.cfg.min_legit_total:
+        if lg.transaction_count <= 1 and lg.total_amount < self.cfg.min_legit_total and not rapid:
             add("legit_weak_relationship", "Relationship with the 'legitimate' recipient is weak (single small payment)", sign=-1)
+
+        # -- timing: the classic "test payment -> dust -> main payment" sequence ----------------
+        if rapid:
+            dust_s, pay_s = rapid
+            add(
+                "rapid_poisoning_sequence",
+                f"Look-alike touched the victim {_dur(dust_s)} after the victim paid the real address; "
+                f"the victim then paid the look-alike {_dur(pay_s)} after paying the real address",
+                "FACT",
+            )
 
         # -- novelty of the suspicious recipient -----------------------------------
         if sp.transaction_count == 0:
@@ -223,8 +252,16 @@ class RiskEngine:
         if event_type == EventType.SUCCESSFUL_POISONING_EVENT:
             if ctx.amount < self.cfg.min_victim_amount:
                 event_type, capped = EventType.POISONING_CANDIDATE, "amount below MIN_VICTIM_AMOUNT_USDT"
-            elif not self.legit_is_established(lg):
+            elif not self.legit_is_established(lg) and not rapid:
                 event_type, capped = EventType.POISONING_CANDIDATE, "legitimate recipient not established"
             elif ctx.initiator_is_victim is False:
                 event_type, capped = EventType.POISONING_CANDIDATE, "transfer not initiated by victim"
         return RiskAssessment(score=score, event_type=event_type, signals=sig, capped_reason=capped)
+
+
+def _dur(seconds: int) -> str:
+    if seconds < 120:
+        return f"{seconds} s"
+    if seconds < 7200:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h"
