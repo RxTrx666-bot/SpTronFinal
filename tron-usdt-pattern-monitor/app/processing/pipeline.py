@@ -172,6 +172,7 @@ class TransactionMatcher:
         )
         if te_id is None:
             return False  # already alerted for this transfer
+        self.cache.pending_pairs.add(tx.pair)
         text = self.fmt.test_alert(
             snap,
             tx_hash=tx.transaction_hash,
@@ -313,7 +314,7 @@ class Pipeline:
         if not events:
             return 0
         start = self.clock.now()
-        watch = self.cache.pairs() if live else set()
+        watch = self.cache.match_pairs(self.s.alert_on_weakened) if live else set()
         rematch = watch if self.s.send_confirmation_alerts else set()
 
         async with self.sf() as s, s.begin():

@@ -532,6 +532,15 @@ async def pending_test_events(
     return list(rows.scalars())
 
 
+async def pairs_with_pending_tests(session: AsyncSession) -> set[tuple[str, str]]:
+    rows = await session.execute(
+        select(TestEvent.sender, TestEvent.recipient)
+        .where(TestEvent.status == TestEventStatus.PENDING.value)
+        .distinct()
+    )
+    return {(r.sender, r.recipient) for r in rows}
+
+
 async def count_test_events_since(session: AsyncSession, sender: str, recipient: str, since: datetime) -> int:
     return int(
         (

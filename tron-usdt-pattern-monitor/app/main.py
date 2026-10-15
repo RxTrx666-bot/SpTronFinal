@@ -91,6 +91,7 @@ class Application:
         await init_schema(self.engine, self.settings.database_url, self.settings.auto_migrate)
         async with self.session_factory() as s:
             self.cache.load(await repo.all_watchlist(s))
+            self.cache.pending_pairs = await repo.pairs_with_pending_tests(s)
         await self.dispatcher.recover()
         await self.collector.initialise()
         log.info("Watchlist loaded", entries=len(self.cache))

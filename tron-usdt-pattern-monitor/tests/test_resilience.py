@@ -264,3 +264,44 @@ async def test_backfill_older_than_retention_is_skipped(make_harness):
     await h.app.collector.run_backfill(h.app.stop_event, h.app.on_backfill_complete)
     assert h.src.calls == calls and h.app.collector.stats.backfill_done
     assert await h.tx_count() == 0
+
+
+async def test_retention_prune_is_gentle_and_waits_for_live_stream(make_harness):
+    import time as _time
+
+    h = await make_harness(retention_days=14, prune_batch_size=100, prune_batches_per_cycle=2)
+    old = h.clock.now() - timedelta(days=30)
+    from app.collector.event_parser import parse_events
+
+    raws = [h.ev(f"S{i}", "R", 5, old + timedelta(seconds=i)) for i in range(450)]
+    events, _ = parse_events(raws, h.contract, confirmed=True)
+    await h.app.pipeline.process(events, live=False)  # store 30-day-old transfers
+    assert await h.tx_count() == 450
+    m = h.app.maintenance
+    stats = h.app.collector.stats
+    stats.confirmed_cursor_ms = int(_time.time() * 1000) - 3_600_000  # 1 h behind
+    assert await m.prune_step(h.clock.now(), 1.0) == 0  # live stream first
+    stats.confirmed_cursor_ms = int(_time.time() * 1000)  # caught up
+    assert await m.prune_step(h.clock.now(), 2.0) == 200  # one small slice per cycle
+    assert await h.tx_count() == 250
+    await m.prune_step(h.clock.now(), 3.0)
+    await m.prune_step(h.clock.now(), 4.0)
+    assert await h.tx_count() == 0
+
+
+async def test_only_alertable_pairs_go_through_matching(make_harness):
+    from tests.test_pipeline import AB, learned
+
+    h = await learned(make_harness, AB)
+    pair = (addr("A"), addr("B"))
+    assert pair in h.app.cache.match_pairs()
+    snap = h.app.cache.get(*pair)
+    from dataclasses import replace
+
+    from app.domain import WatchlistStatus
+
+    h.app.cache.put(replace(snap, status=WatchlistStatus.WEAKENED))
+    assert pair not in h.app.cache.match_pairs()
+    assert pair in h.app.cache.match_pairs(alert_on_weakened=True)
+    h.app.cache.pending_pairs.add(pair)  # a pending test keeps the follow-up watch alive
+    assert pair in h.app.cache.match_pairs()

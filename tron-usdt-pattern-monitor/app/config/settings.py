@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     maintenance_interval_seconds: int = 15
     watchlist_reevaluate_minutes: int = 60
     retention_days: int = 150
+    prune_batch_size: int = 5000
+    prune_batches_per_cycle: int = 4
+    prune_max_lag_seconds: int = 180
     heartbeat_file: str = "/tmp/tron-usdt-monitor.heartbeat"
     heartbeat_log_seconds: int = 60
 

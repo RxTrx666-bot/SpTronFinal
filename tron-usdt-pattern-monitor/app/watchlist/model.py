@@ -86,6 +86,7 @@ class WatchlistSnapshot:
 class WatchlistCache:
     def __init__(self) -> None:
         self._by_pair: dict[tuple[str, str], WatchlistSnapshot] = {}
+        self.pending_pairs: set[tuple[str, str]] = set()
 
     def load(self, entries: list[WatchlistEntry]) -> None:
         self._by_pair = {(e.sender, e.recipient): WatchlistSnapshot.from_entry(e) for e in entries}
@@ -98,6 +99,14 @@ class WatchlistCache:
 
     def pairs(self) -> set[tuple[str, str]]:
         return set(self._by_pair)
+
+    def match_pairs(self, alert_on_weakened: bool = False) -> set[tuple[str, str]]:
+        """Pairs whose new transfers must go through watchlist matching: those that can
+        raise a test alert, plus any pair with a pending test (follow-up watch)."""
+        live = {WatchlistStatus.ACTIVE, WatchlistStatus.PAUSED}
+        if alert_on_weakened:
+            live.add(WatchlistStatus.WEAKENED)
+        return {p for p, s in self._by_pair.items() if s.status in live} | self.pending_pairs
 
     def __contains__(self, pair: tuple[str, str]) -> bool:
         return pair in self._by_pair

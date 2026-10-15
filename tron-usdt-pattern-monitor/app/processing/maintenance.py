@@ -21,12 +21,15 @@ class Maintenance:
         self.app = app
         self.s = app.settings
         self._last_reeval = 0.0
-        self._last_prune = 0.0
+        self._prune_idle_until = 0.0
+        self._pruned_total = 0
+        self._last_prune_log = 0.0
         self._last_heartbeat_log = 0.0
 
     async def run_once(self) -> None:
         a = self.app
         now = a.clock.now()
+        self.heartbeat()
 
         # 1. Pending test events whose follow-up window elapsed -> EXPIRED (lowers success rate).
         async with a.session_factory() as s, s.begin():
@@ -69,22 +72,35 @@ class Maintenance:
         if reeval_all:
             self._last_reeval = mono
 
-        # 6. Retention.
-        if self.s.retention_days > 0 and mono - self._last_prune > 3600:
-            self._last_prune = mono
-            cutoff = now - timedelta(days=self.s.retention_days)
-            total = 0
-            while True:
-                async with a.session_factory() as s, s.begin():
-                    n = await repo.prune_transactions(s, cutoff)
-                total += n
-                if n == 0:
-                    break
-                await asyncio.sleep(0)
-            if total:
-                log.info("Pruned old transfers", count=total, older_than=cutoff.isoformat())
+        # 6. Retention: delete old transfers in small slices, and only while the live
+        #    stream is up to date, so a large clean-up never starves live processing.
+        await self.prune_step(now, mono)
 
         self.heartbeat()
+
+    async def prune_step(self, now, mono: float) -> int:
+        a = self.app
+        if self.s.retention_days <= 0 or mono < self._prune_idle_until:
+            return 0
+        cursor = a.collector.stats.confirmed_cursor_ms
+        if cursor is None or time.time() * 1000 - cursor > self.s.prune_max_lag_seconds * 1000:
+            return 0  # behind: give the database to the live stream first
+        cutoff = now - timedelta(days=self.s.retention_days)
+        deleted = 0
+        for _ in range(self.s.prune_batches_per_cycle):
+            async with a.session_factory() as s, s.begin():
+                n = await repo.prune_transactions(s, cutoff, batch=self.s.prune_batch_size)
+            deleted += n
+            if n < self.s.prune_batch_size:
+                self._prune_idle_until = mono + 3600  # nothing (more) to delete for now
+                break
+            await asyncio.sleep(0.2)
+        self._pruned_total += deleted
+        if self._pruned_total and (deleted == 0 or mono - self._last_prune_log > 300):
+            log.info("Pruned old transfers", count=self._pruned_total, older_than=cutoff.isoformat())
+            self._pruned_total = 0
+            self._last_prune_log = mono
+        return deleted
 
     def heartbeat(self) -> None:
         try:

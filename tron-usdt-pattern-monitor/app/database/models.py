@@ -237,6 +237,7 @@ class TestEvent(Base):
         UniqueConstraint("transaction_hash", "event_index", name="uq_test_events_tx"),
         Index("ix_test_events_pair_status", "sender", "recipient", "status"),
         Index("ix_test_events_status_expires", "status", "expires_at"),
+        Index("ix_test_events_transaction_id", "transaction_id"),
     )
 
 
@@ -260,6 +261,7 @@ class FollowupEvent(Base):
         UniqueConstraint("test_event_id", name="uq_followup_test_event"),
         UniqueConstraint("large_transaction_hash", "large_event_index", name="uq_followup_large_tx"),
         Index("ix_followup_pair", "sender", "recipient"),
+        Index("ix_followup_large_transaction_id", "large_transaction_id"),
     )
 
 
