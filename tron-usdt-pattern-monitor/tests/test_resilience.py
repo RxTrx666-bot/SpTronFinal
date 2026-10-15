@@ -214,3 +214,53 @@ async def test_multiple_chat_ids_each_get_every_alert_once():
     await sink.send("alert")              # retry: only 222 is sent
     assert sent == ["111", "222"]
     await client.close()
+
+
+async def test_large_batch_is_stored_without_parameter_limit_error(make_harness):
+    """A backfill window holds ~10,000 transfers; one INSERT of that size exceeds the
+    32,767 bind-parameter limit (this used to loop forever as 'database unavailable')."""
+    h = await make_harness()
+    start = h.clock.now() - timedelta(hours=2)
+    for i in range(6000):
+        h.ev(f"S{i % 300}", f"R{i % 7}", 5 + i % 50, start + timedelta(seconds=i))
+    await h.backfill(start - timedelta(minutes=1))
+    assert await h.tx_count() == 6000
+
+
+def test_too_many_parameters_is_not_a_transient_error():
+    from sqlalchemy.exc import InterfaceError
+
+    from app.database.session import is_transient_db_error
+
+    exc = InterfaceError("INSERT", {}, Exception("the number of query arguments cannot exceed 32767"))
+    assert not is_transient_db_error(exc)
+    assert is_transient_db_error(InterfaceError("SELECT 1", {}, Exception("connection is closed")))
+
+
+async def test_live_stream_skips_long_gap(make_harness):
+    h = await make_harness(max_catchup_hours=6)
+    old = h.app.collector.stats.confirmed_cursor_ms
+    h.ev("A", "B", 5, h.clock.now() + timedelta(hours=1))  # inside the gap: skipped
+    h.clock.advance(days=3)
+    h.ev("C", "D", 7, h.clock.now())  # current transfer: processed
+    await h.poll()
+    assert h.app.collector.stats.confirmed_cursor_ms > old + 2 * 86_400_000
+    assert await h.tx_count() == 1
+
+
+async def test_backfill_older_than_retention_is_skipped(make_harness):
+    h = await make_harness(retention_days=14)
+    old_start = h.clock.now() - timedelta(days=40)
+    h.ev("A", "B", 5, old_start + timedelta(hours=1))
+    async with h.app.session_factory() as s, s.begin():
+        from app.database import repository as repo
+        from app.domain import datetime_to_ms
+
+        now = h.clock.now()
+        await repo.set_state(s, "backfill_next_ms", str(datetime_to_ms(old_start)), now)
+        await repo.set_state(s, "backfill_end_ms", str(datetime_to_ms(now - timedelta(days=20))), now)
+        await repo.set_state(s, "backfill_complete", "0", now)
+    calls = h.src.calls
+    await h.app.collector.run_backfill(h.app.stop_event, h.app.on_backfill_complete)
+    assert h.src.calls == calls and h.app.collector.stats.backfill_done
+    assert await h.tx_count() == 0

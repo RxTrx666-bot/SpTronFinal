@@ -49,6 +49,8 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker:
 
 def is_transient_db_error(exc: BaseException) -> bool:
     """Connection / availability problems that should be retried, not skipped."""
+    if "query arguments cannot exceed" in str(exc):
+        return False  # statement too large: retrying the same batch can never succeed
     if isinstance(exc, (OperationalError, InterfaceError, ConnectionError, OSError, asyncio.TimeoutError)):
         return True
     if isinstance(exc, DBAPIError) and exc.connection_invalidated:

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     unconfirmed_drop_after_minutes: int = 10
     send_confirmation_alerts: bool = False
     dedup_cache_size: int = 200_000
+    # If the live stream falls further behind than this (e.g. after a long
+    # outage), skip ahead to "now" instead of replaying the gap (0 = never skip).
+    max_catchup_hours: float = 6.0
 
     # ------------------------------------------------------------ Backfill
     initial_history_days: int = 30

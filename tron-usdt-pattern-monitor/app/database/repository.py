@@ -30,6 +30,11 @@ from app.detector.pattern_engine import HistTx, PatternModel, _ratio_to_decimal
 from app.domain import AlertStatus, TestEventStatus, TransferEvent, TxStatus
 
 
+# Rows per multi-row INSERT, keeping (rows x columns) well under the 32,767
+# bind-parameter limit of PostgreSQL / asyncpg and SQLite's 32,766.
+INSERT_CHUNK_ROWS = 1000
+
+
 def _insert(session: AsyncSession, table):
     if session.bind.dialect.name == "postgresql":
         from sqlalchemy.dialects.postgresql import insert
@@ -130,14 +135,18 @@ async def insert_transactions(
                 processed=ev.pair not in needs_matching,
             )
         )
-    stmt = (
-        _insert(session, Transaction)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["transaction_hash", "event_index"])
-        .returning(*_TX_COLS)
-    )
-    res = await session.execute(stmt)
-    return [_stored(r, newly_confirmed=r.status == TxStatus.CONFIRMED.value) for r in res]
+    out: list[StoredTx] = []
+    # 13 columns per row; PostgreSQL accepts at most 32,767 parameters per statement.
+    for i in range(0, len(rows), INSERT_CHUNK_ROWS):
+        stmt = (
+            _insert(session, Transaction)
+            .values(rows[i : i + INSERT_CHUNK_ROWS])
+            .on_conflict_do_nothing(index_elements=["transaction_hash", "event_index"])
+            .returning(*_TX_COLS)
+        )
+        res = await session.execute(stmt)
+        out.extend(_stored(r, newly_confirmed=r.status == TxStatus.CONFIRMED.value) for r in res)
+    return out
 
 
 async def confirm_transactions(
@@ -432,8 +441,9 @@ async def replace_sequences(
         )
         for s in model.sequences
     ]
-    stmt = _insert(session, PatternSequence).values(rows).on_conflict_do_nothing()
-    await session.execute(stmt)
+    for i in range(0, len(rows), INSERT_CHUNK_ROWS):
+        stmt = _insert(session, PatternSequence).values(rows[i : i + INSERT_CHUNK_ROWS]).on_conflict_do_nothing()
+        await session.execute(stmt)
 
 
 async def pair_sequences(session: AsyncSession, sender: str, recipient: str, limit: int = 20):

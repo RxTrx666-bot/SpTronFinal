@@ -432,6 +432,7 @@ All settings are environment variables (see `.env.example`). The most important 
 | `DATABASE_URL` | – | `postgresql+asyncpg://user:pass@host:5432/db` |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Alert destination; if either is empty, alerts are printed to stdout |
 | `POLL_INTERVAL_SECONDS` | 1 | Confirmed-stream poll interval |
+| `MAX_CATCHUP_HOURS` | 6 | After an outage longer than this, the live stream skips ahead to "now" instead of replaying the gap |
 | `ENABLE_UNCONFIRMED` | true | Early alerts from unsolidified blocks |
 | `INITIAL_HISTORY_DAYS` | 30 | History scanned on first start |
 | `MIN_SUCCESSFUL_SEQUENCES` | 3 | Consistent sequences needed for ACTIVE |

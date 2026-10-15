@@ -283,6 +283,16 @@ class TronCollector:
         cursor = self.stats.confirmed_cursor_ms
         if cursor is None:
             cursor = int(await self._get_state(STATE_CONFIRMED_CURSOR))
+        now_ms = datetime_to_ms(self.clock.now())
+        if self.s.max_catchup_hours > 0 and now_ms - cursor > self.s.max_catchup_hours * 3_600_000:
+            log.warning(
+                "Live stream too far behind; skipping the gap",
+                was_at=ms_to_datetime(cursor).isoformat(),
+                gap_hours=f"{(now_ms - cursor) / 3_600_000:.1f}",
+            )
+            cursor = now_ms - self.s.confirmed_overlap_seconds * 1000
+            await self._set_state(STATE_CONFIRMED_CURSOR, str(cursor))
+            self.stats.confirmed_cursor_ms = cursor
         min_ts = cursor - self.s.confirmed_overlap_seconds * 1000
         fingerprint = None
         pages = 0
@@ -389,6 +399,15 @@ class TronCollector:
         nxt = int(await self._get_state(STATE_BACKFILL_NEXT) or 0)
         end = int(await self._get_state(STATE_BACKFILL_END) or 0)
         self.stats.backfill_end_ms = end
+        if self.s.retention_days > 0:
+            keep_from = datetime_to_ms(self.clock.now()) - self.s.retention_days * 86_400_000
+            if end <= keep_from:
+                log.warning("Historical backfill skipped: its period is older than RETENTION_DAYS")
+                await self._set_state(STATE_BACKFILL_DONE, "1")
+                await self._set_state(STATE_BACKFILL_ANALYSIS_DONE, "1")
+                self.stats.backfill_done = True
+                return
+            nxt = max(nxt, keep_from)
         step = self.s.backfill_window_seconds * 1000
         windows = [(t, min(t + step, end)) for t in range(nxt, end, step)]
         log.info(
