@@ -105,42 +105,18 @@ def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
 def build_status_message(
     settings: Settings,
     stats: MonitorStats,
-    detected_total: int,
-    last_match: StoredTransaction | None,
-    api_last_ms: float | None,
-    api_avg_ms: float | None,
-    pending_alerts: int,
+    detected_total: int = 0,
+    last_match: StoredTransaction | None = None,
+    api_last_ms: float | None = None,
+    api_avg_ms: float | None = None,
+    pending_alerts: int = 0,
     limit_count: int | None = None,
 ) -> str:
+    """Compact /status. (The extra arguments are accepted for compatibility but not shown.)"""
     status, monitoring = _monitoring_state(settings, stats)
-
-    if stats.last_checked_tx_hash and stats.last_checked_tx_time_ms:
-        last_checked = (f"<code>{stats.last_checked_tx_hash[:16]}…</code> · "
-                        f"{format_utc(stats.last_checked_tx_time_ms)}")
-    else:
-        last_checked = "none yet"
-    if settings.monitor_mode == "blocks" and stats.last_block_checked is not None:
-        head = f" (head {stats.head_block})" if stats.head_block else ""
-        last_checked = f"block {stats.last_block_checked}{head} · {last_checked}"
-
-    if last_match:
-        link = f"{settings.tronscan_tx_url}{last_match.tx_hash}"
-        icon = DIRECTION_ICON.get(last_match.direction, "")
-        last_match_lines = [
-            f"✅ <b>Last match:</b> {escape(last_match.amount_usdt)} USDT {icon}",
-            f"   🕒 {format_utc(last_match.block_timestamp_ms)}",
-            f'   🔗 <a href="{escape(link)}">{last_match.tx_hash[:16]}…</a>',
-        ]
-    else:
-        last_match_lines = ["✅ <b>Last match:</b> none yet"]
-
     api_latency = f"{api_last_ms:.0f} ms (avg {api_avg_ms:.0f} ms)" if api_last_ms is not None else "n/a"
-    detection = (
-        f"{stats.last_detection_latency_ms / 1000:.3f} s" if stats.last_detection_latency_ms is not None else "n/a"
-    )
     last_poll = format_utc(stats.last_poll_ok_ms) if stats.last_poll_ok_ms else "never"
     speed = "confirmed only" if settings.confirmed_only else "fast"
-
     lines = [
         "📊 <b>BOT STATUS</b>",
         SEP,
@@ -151,25 +127,11 @@ def build_status_message(
         "🌐 <b>Network:</b> TRON Mainnet",
         "💎 <b>Token:</b> USDT TRC-20",
         f"📜 <b>Contract:</b>\n<code>{escape(settings.usdt_contract)}</code>",
-        *_amount_lines(settings),
-        f"🧭 <b>Direction:</b> {settings.directions_label}",
-        SEP,
-        f"📈 <b>Detected:</b> {detected_total} total · {stats.matches_this_session} this session",
-    ]
-    if settings.tx_limit_threshold and limit_count is not None:
-        icon = "🚨" if limit_count >= settings.tx_limit_threshold else "🔢"
-        lines.append(f"{icon} <b>Counter:</b> {limit_count}/{settings.tx_limit_threshold}")
-    lines += [
-        f"🔎 <b>Last checked:</b> {last_checked}",
-        *last_match_lines,
         SEP,
         f"⚡ <b>API latency:</b> {api_latency}",
-        f"⏱️ <b>Detection latency:</b> {detection}",
         f"🛰️ <b>Mode:</b> {escape(settings.monitor_mode)} · poll {settings.poll_interval_seconds:g}s · {speed}",
         f"🕒 <b>Last poll:</b> {last_poll}",
         f"🔁 <b>Transfers checked:</b> {stats.transfers_checked}",
-        f"📮 <b>Pending alerts:</b> {pending_alerts}",
-        f"⌛ <b>Uptime:</b> {format_duration((now_ms() - stats.started_at_ms) / 1000)}",
     ]
     if stats.consecutive_errors:
         lines.append(f"⚠️ <b>Consecutive API errors:</b> {stats.consecutive_errors}")

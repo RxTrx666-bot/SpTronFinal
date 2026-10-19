@@ -89,7 +89,7 @@ def test_admin_commands():
         assert "Direction:</b> INCOMING ⬇️ + OUTGOING ⬆️" in wallet
         status = await bot.handle_update(update(1001, "/status@MyBot"))
         assert "Status:</b> 🟢 ONLINE" in status and "TRON Mainnet" in status
-        assert "Detected:</b> 1 total" in status and "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
+        assert "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
         assert "SECRET" not in status and "TEST-TOKEN" not in status and "49a5e403" not in status
         assert "/wallet" in await bot.handle_update(update(1001, "/help"))
         assert "running" in await bot.handle_update(update(1001, "/start"))
@@ -194,6 +194,12 @@ def test_status_wallet_help_have_an_icon_on_every_line():
             # every non-empty line starts with an emoji/separator, an indented item or an address/code line
             assert (not line or not line[0].isascii() or line.startswith(("<code>", "   ")) ), line
     status = texts[0]
-    for part in ("🚦 <b>Status:</b> 🟢 ONLINE", "💵 <b>Amounts:</b>", "▫️ 20.000000 – 20.000100 USDT",
-                 "🔢 <b>Counter:</b> 3/150", "⚡ <b>API latency:</b> 20 ms (avg 120 ms)"):
+    for part in ("🚦 <b>Status:</b> 🟢 ONLINE", "👛 <b>Wallet:</b>", "🌐 <b>Network:</b> TRON Mainnet",
+                 "💎 <b>Token:</b> USDT TRC-20", "📜 <b>Contract:</b>", "⚡ <b>API latency:</b> 20 ms (avg 120 ms)",
+                 "🛰️ <b>Mode:</b>", "🕒 <b>Last poll:</b>", "🔁 <b>Transfers checked:</b>"):
         assert part in status, part
+    # removed on request: range/amounts, direction, detected, last checked, last match,
+    # detection latency, counter, pending alerts, uptime
+    for gone in ("Range", "Amounts", "Direction", "Detected", "Last checked", "Last match", "Detection latency",
+                 "Counter", "Pending alerts", "Uptime", "USDT TRC-20 transfers"):
+        assert gone not in status, gone
