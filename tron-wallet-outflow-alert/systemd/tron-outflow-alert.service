@@ -1,0 +1,22 @@
+[Unit]
+Description=Read-only TRON USDT outgoing-transfer Telegram alerts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tronalert
+WorkingDirectory=/opt/tron-wallet-outflow-alert
+EnvironmentFile=/opt/tron-wallet-outflow-alert/.env
+ExecStartPre=/opt/tron-wallet-outflow-alert/.venv/bin/python -m outflow_alert check
+ExecStart=/opt/tron-wallet-outflow-alert/.venv/bin/python -m outflow_alert
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/tron-wallet-outflow-alert/data
+
+[Install]
+WantedBy=multi-user.target
