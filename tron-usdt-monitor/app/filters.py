@@ -65,7 +65,8 @@ class TransferFilter:
     3. Token metadata (when present) is USDT with 6 decimals
     4. The monitored wallet is sender or recipient, in a monitored direction
        (ALERT_DIRECTIONS, default OUTGOING only)
-    5. min_raw <= amount <= max_raw (inclusive, integer compare)
+    5. The amount lies in one of the configured inclusive ranges (integer compare),
+       e.g. [(1_010_000, 1_010_100), (10_000_000, 10_000_100), ...]
     """
 
     def __init__(
@@ -77,9 +78,14 @@ class TransferFilter:
         symbol: str = "USDT",
         decimals: int = 6,
         directions: frozenset[Direction] | None = None,
+        ranges: "tuple[tuple[int, int], ...] | None" = None,
     ) -> None:
-        if min_raw < 0 or max_raw < min_raw:
-            raise ValueError("invalid amount range")
+        self.ranges = tuple(ranges) if ranges else ((min_raw, max_raw),)
+        for lo, hi in self.ranges:
+            if lo < 0 or hi < lo:
+                raise ValueError("invalid amount range")
+        min_raw = min(lo for lo, _ in self.ranges)
+        max_raw = max(hi for _, hi in self.ranges)
         self.wallet = wallet
         self.contract = contract
         self.min_raw = min_raw
@@ -94,7 +100,7 @@ class TransferFilter:
         self.directions = frozenset(allowed)
 
     def amount_in_range(self, raw: int) -> bool:
-        return self.min_raw <= raw <= self.max_raw
+        return any(lo <= raw <= hi for lo, hi in self.ranges)
 
     def direction_of(self, sender: str, recipient: str) -> Direction | None:
         if sender == self.wallet and recipient == self.wallet:

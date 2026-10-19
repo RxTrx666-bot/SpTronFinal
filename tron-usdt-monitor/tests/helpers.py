@@ -117,7 +117,7 @@ async def make_processor(settings: Settings | None = None, repo: SQLiteRepositor
     alerts = FakeAlerts()
     stats = MonitorStats()
     flt = TransferFilter(settings.wallet_address, settings.usdt_contract, settings.min_raw, settings.max_raw,
-                         directions=settings.alert_directions)
+                         directions=settings.alert_directions, ranges=settings.amount_ranges)
     kwargs = {"clock": clock} if clock else {}
     return TransactionProcessor(settings, flt, repo, alerts, stats, **kwargs), repo, alerts, stats
 

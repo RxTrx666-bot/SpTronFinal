@@ -67,6 +67,21 @@ Incoming transfers (default), TRX transfers (no TRC-20 event), TRC-10 tokens, ot
 "USDT" from other contracts), `Approval` and other events, TRC-721 transfers, failed/reverted
 transactions, USDT < 1.000000 or > 1.000100, and transfers not involving the wallet.
 
+### Several amounts (AMOUNTS)
+`AMOUNTS=1.01,10,20,30` alerts only on transfers of those amounts. Each amount matches up to
+`AMOUNT_TOLERANCE` (default 0.000100) above it:
+
+| Amount | Matches |
+|---|---|
+| 1.01 | 1.010000 – 1.010100 |
+| 10 | 10.000000 – 10.000100 |
+| 20 | 20.000000 – 20.000100 |
+| 30 | 30.000000 – 30.000100 |
+
+Everything else (1.000050, 20.5, 25, …) is ignored. Use `.` as the decimal point and `,` between
+amounts. `AMOUNT_TOLERANCE=0` means exact amounts only, and `AMOUNTS=10-30` is a plain range.
+When `AMOUNTS` is empty, `MIN_USDT`/`MAX_USDT` are used.
+
 ### Precision
 Amounts are integer base units (`1 USDT = 1_000_000`). `MIN_USDT`/`MAX_USDT` are parsed with
 `Decimal` and converted exactly. Floating point is never used for the range check.
@@ -303,7 +318,7 @@ app/
   logger.py            structured (text/json) logging with secret redaction
   control.py           server-side start/stop/status of monitoring
   healthcheck.py       Docker HEALTHCHECK (heartbeat freshness)
-tests/                 124 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
+tests/                 158 tests: filters, parser, duplicates, monitors, retries, Telegram, startup checks
 ```
 
 ### Moving to PostgreSQL later

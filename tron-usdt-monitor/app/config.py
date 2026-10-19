@@ -84,6 +84,7 @@ class Settings:
     token_decimals: int
     min_raw: int
     max_raw: int
+    amount_ranges: tuple[tuple[int, int], ...]
     alert_directions: frozenset[Direction]
     tx_limit_threshold: int
     pause_on_limit: bool
@@ -124,6 +125,16 @@ class Settings:
     @property
     def max_usdt(self) -> str:
         return format_token_amount(self.max_raw, self.token_decimals)
+
+    @property
+    def range_lines(self) -> list[str]:
+        """One line per configured amount range, e.g. ["10.000000 – 10.000100 USDT", ...]."""
+        d = self.token_decimals
+        return [f"{format_token_amount(lo, d)} – {format_token_amount(hi, d)} USDT" for lo, hi in self.amount_ranges]
+
+    @property
+    def range_label(self) -> str:
+        return " | ".join(self.range_lines)
 
     @property
     def telegram_admin_chat_id(self) -> int:
@@ -179,6 +190,36 @@ class Settings:
         if min_raw > max_raw:
             raise ConfigError("MIN_USDT must be <= MAX_USDT")
 
+        # AMOUNTS (optional, takes priority over MIN_USDT/MAX_USDT): comma-separated amounts
+        # (decimal point is "."), each matching [amount, amount + AMOUNT_TOLERANCE], or explicit
+        # "low-high" ranges. Example: AMOUNTS=1.01,10,20,30
+        ranges: list[tuple[int, int]] = []
+        amounts_raw = e.str("AMOUNTS", "")
+        if amounts_raw:
+            try:
+                tolerance = parse_token_amount(e.str("AMOUNT_TOLERANCE", "0.000100"), decimals)
+                for part in amounts_raw.replace(";", ",").split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    if "-" in part:
+                        lo_s, hi_s = part.split("-", 1)
+                        lo, hi = parse_token_amount(lo_s, decimals), parse_token_amount(hi_s, decimals)
+                    else:
+                        lo = parse_token_amount(part, decimals)
+                        hi = lo + tolerance
+                    if hi < lo:
+                        raise ValueError(f"range {part!r} has high < low")
+                    ranges.append((lo, hi))
+            except ValueError as exc:
+                raise ConfigError(f"AMOUNTS/AMOUNT_TOLERANCE: {exc} (use '.' as decimal point, ',' between amounts)") from exc
+            if not ranges:
+                raise ConfigError("AMOUNTS is set but contains no amounts")
+            ranges.sort()
+            min_raw, max_raw = ranges[0][0], max(hi for _, hi in ranges)
+        else:
+            ranges = [(min_raw, max_raw)]
+
         # One or more chat ids, comma-separated: every id receives all alerts and may use commands.
         chat_ids: list[int] = []
         for part in e.str("TELEGRAM_ADMIN_CHAT_ID", required=True).split(","):
@@ -232,6 +273,7 @@ class Settings:
             token_decimals=decimals,
             min_raw=min_raw,
             max_raw=max_raw,
+            amount_ranges=tuple(ranges),
             alert_directions=frozenset(directions),
             tx_limit_threshold=e.int("TX_LIMIT_THRESHOLD", 150, 0),
             pause_on_limit=e.bool("PAUSE_ON_LIMIT", True),
