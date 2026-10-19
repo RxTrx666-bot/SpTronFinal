@@ -64,27 +64,40 @@ def build_alert_message(tx: StoredTransaction, settings: Settings) -> str:
     return "\n".join(lines)
 
 
+SEP = "━━━━━━━━━━━━━━━━━━"
+
+
+def _amount_lines(settings: Settings) -> list[str]:
+    if len(settings.amount_ranges) == 1:
+        return [f"💵 <b>Range:</b> {escape(settings.range_lines[0])}"]
+    return ["💵 <b>Amounts:</b>", *(f"   ▫️ {escape(line)}" for line in settings.range_lines)]
+
+
+def _monitoring_state(settings: Settings, stats: MonitorStats) -> tuple[str, str]:
+    """(status, monitoring) labels with their icons."""
+    if stats.paused:
+        return "⏸️ PAUSED", "⏸️ PAUSED"
+    if stats.is_healthy(settings.poll_interval_seconds):
+        return "🟢 ONLINE", "🟢 ACTIVE"
+    if not stats.initialized or (stats.last_poll_ok_ms is None and not stats.consecutive_errors):
+        return "🟡 STARTING", "🟡 CONNECTING"
+    return "🟠 DEGRADED", "🔴 TRON API UNREACHABLE (retrying)"
+
+
 def build_wallet_message(settings: Settings, stats: MonitorStats) -> str:
-    active = stats.is_healthy(settings.poll_interval_seconds)
+    _, monitoring = _monitoring_state(settings, stats)
     return "\n".join(
         [
             "💼 <b>MONITORED WALLET</b>",
+            SEP,
+            f"👛 <code>{escape(settings.wallet_address)}</code>",
             "",
-            f"<code>{escape(settings.wallet_address)}</code>",
-            "",
-            "Network: TRON",
-            "Token: USDT TRC-20",
-            "",
-            "Amount Range:" if len(settings.amount_ranges) == 1 else "Amounts:",
-            *settings.range_lines,
-            "",
-            "Direction:",
-            settings.directions_label,
-            "",
-            "Monitoring:",
-            "⏸️ PAUSED"
-            if stats.paused
-            else ("🟢 ACTIVE" if active else "🔴 NOT ACTIVE (API unreachable, see /status)"),
+            "🌐 <b>Network:</b> TRON Mainnet",
+            "💎 <b>Token:</b> USDT TRC-20",
+            *_amount_lines(settings),
+            f"🧭 <b>Direction:</b> {settings.directions_label}",
+            SEP,
+            f"📡 <b>Monitoring:</b> {monitoring}",
         ]
     )
 
@@ -99,100 +112,69 @@ def build_status_message(
     pending_alerts: int,
     limit_count: int | None = None,
 ) -> str:
-    healthy = stats.is_healthy(settings.poll_interval_seconds)
-    if stats.paused:
-        status, monitoring = "⏸️ PAUSED", "⏸️ PAUSED"
-    elif healthy:
-        status, monitoring = "🟢 ONLINE", "🟢 ACTIVE"
-    elif not stats.initialized or (stats.last_poll_ok_ms is None and not stats.consecutive_errors):
-        status, monitoring = "🟡 STARTING", "🟡 CONNECTING"
-    else:
-        status, monitoring = "🟠 DEGRADED", "🔴 TRON API UNREACHABLE (retrying)"
+    status, monitoring = _monitoring_state(settings, stats)
 
     if stats.last_checked_tx_hash and stats.last_checked_tx_time_ms:
-        last_checked = f"<code>{stats.last_checked_tx_hash[:16]}…</code>\n{format_utc(stats.last_checked_tx_time_ms)}"
+        last_checked = (f"<code>{stats.last_checked_tx_hash[:16]}…</code> · "
+                        f"{format_utc(stats.last_checked_tx_time_ms)}")
     else:
         last_checked = "none yet"
     if settings.monitor_mode == "blocks" and stats.last_block_checked is not None:
-        last_checked = f"Block {stats.last_block_checked}" + (
-            f" (head {stats.head_block})" if stats.head_block else ""
-        ) + f"\n{last_checked}"
+        head = f" (head {stats.head_block})" if stats.head_block else ""
+        last_checked = f"block {stats.last_block_checked}{head} · {last_checked}"
 
     if last_match:
         link = f"{settings.tronscan_tx_url}{last_match.tx_hash}"
-        last_match_text = (
-            f"{escape(last_match.direction)} {escape(last_match.amount_usdt)} USDT\n"
-            f"{format_utc(last_match.block_timestamp_ms)}\n"
-            f'<a href="{escape(link)}">{last_match.tx_hash[:16]}…</a>'
-        )
+        icon = DIRECTION_ICON.get(last_match.direction, "")
+        last_match_lines = [
+            f"✅ <b>Last match:</b> {escape(last_match.amount_usdt)} USDT {icon}",
+            f"   🕒 {format_utc(last_match.block_timestamp_ms)}",
+            f'   🔗 <a href="{escape(link)}">{last_match.tx_hash[:16]}…</a>',
+        ]
     else:
-        last_match_text = "none yet"
+        last_match_lines = ["✅ <b>Last match:</b> none yet"]
 
-    if api_last_ms is not None:
-        api_latency = f"{api_last_ms:.0f} ms (avg {api_avg_ms:.0f} ms)"
-    else:
-        api_latency = "n/a"
+    api_latency = f"{api_last_ms:.0f} ms (avg {api_avg_ms:.0f} ms)" if api_last_ms is not None else "n/a"
     detection = (
         f"{stats.last_detection_latency_ms / 1000:.3f} s" if stats.last_detection_latency_ms is not None else "n/a"
     )
     last_poll = format_utc(stats.last_poll_ok_ms) if stats.last_poll_ok_ms else "never"
+    speed = "confirmed only" if settings.confirmed_only else "fast"
+
     lines = [
         "📊 <b>BOT STATUS</b>",
-        "",
-        f"Status: {status}",
-        "",
-        "Wallet:",
-        f"<code>{escape(settings.wallet_address)}</code>",
-        "",
-        "Network:",
-        "TRON Mainnet",
-        "",
-        "Token:",
-        "USDT TRC-20",
-        "",
-        "Contract:",
-        f"<code>{escape(settings.usdt_contract)}</code>",
-        "",
-        "Range:" if len(settings.amount_ranges) == 1 else "Amounts:",
-        *settings.range_lines,
-        "",
-        "Direction:",
-        settings.directions_label,
-        "",
-        "Monitoring:",
-        monitoring,
-        "",
-        "Transactions Detected:",
-        f"{detected_total} total ({stats.matches_this_session} this session)",
-        "",
-        "Last Transaction Checked:",
-        last_checked,
-        "",
-        "Last Matching Transaction:",
-        last_match_text,
-        "",
-        "API Latency:",
-        api_latency,
-        "",
-        "Last Detection Latency:",
-        detection,
+        SEP,
+        f"🚦 <b>Status:</b> {status}",
+        f"📡 <b>Monitoring:</b> {monitoring}",
+        SEP,
+        f"👛 <b>Wallet:</b>\n<code>{escape(settings.wallet_address)}</code>",
+        "🌐 <b>Network:</b> TRON Mainnet",
+        "💎 <b>Token:</b> USDT TRC-20",
+        f"📜 <b>Contract:</b>\n<code>{escape(settings.usdt_contract)}</code>",
+        *_amount_lines(settings),
+        f"🧭 <b>Direction:</b> {settings.directions_label}",
+        SEP,
+        f"📈 <b>Detected:</b> {detected_total} total · {stats.matches_this_session} this session",
     ]
     if settings.tx_limit_threshold and limit_count is not None:
         icon = "🚨" if limit_count >= settings.tx_limit_threshold else "🔢"
-        lines += ["", "Transaction Counter:", f"{icon} {limit_count}/{settings.tx_limit_threshold}"]
+        lines.append(f"{icon} <b>Counter:</b> {limit_count}/{settings.tx_limit_threshold}")
     lines += [
-        "",
-        f"Mode: {escape(settings.monitor_mode)} · poll {settings.poll_interval_seconds:g}s"
-        f" · {'confirmed only' if settings.confirmed_only else 'fast (unconfirmed blocks)'}",
-        f"Last successful poll: {last_poll}",
-        f"Transfers checked: {stats.transfers_checked}",
-        f"Pending alerts: {pending_alerts}",
-        f"Uptime: {format_duration((now_ms() - stats.started_at_ms) / 1000)}",
+        f"🔎 <b>Last checked:</b> {last_checked}",
+        *last_match_lines,
+        SEP,
+        f"⚡ <b>API latency:</b> {api_latency}",
+        f"⏱️ <b>Detection latency:</b> {detection}",
+        f"🛰️ <b>Mode:</b> {escape(settings.monitor_mode)} · poll {settings.poll_interval_seconds:g}s · {speed}",
+        f"🕒 <b>Last poll:</b> {last_poll}",
+        f"🔁 <b>Transfers checked:</b> {stats.transfers_checked}",
+        f"📮 <b>Pending alerts:</b> {pending_alerts}",
+        f"⌛ <b>Uptime:</b> {format_duration((now_ms() - stats.started_at_ms) / 1000)}",
     ]
     if stats.consecutive_errors:
-        lines.append(f"⚠️ Consecutive API errors: {stats.consecutive_errors}")
+        lines.append(f"⚠️ <b>Consecutive API errors:</b> {stats.consecutive_errors}")
         if stats.last_error:
-            lines.append(f"Last error: {escape(stats.last_error[:200])}")
+            lines.append(f"🧾 {escape(stats.last_error[:200])}")
     for warning in stats.warnings:
         lines.append(f"⚠️ {escape(warning)}")
     return "\n".join(lines)
@@ -230,29 +212,38 @@ def build_resumed_message(threshold: int, cycle: int, was_paused: bool, still_pa
     return "\n".join(lines)
 
 
+def _command_lines(settings: Settings) -> list[str]:
+    return [
+        "📊 /status – monitoring status and latency",
+        "💼 /wallet – monitored wallet and amounts",
+        f"♻️ /reset – restart the {settings.tx_limit_threshold}-transaction counter at 0",
+        "📘 /help – this message",
+    ]
+
+
 def build_help_message(settings: Settings) -> str:
     return "\n".join(
         [
             "📘 <b>TRON USDT MONITOR</b>",
-            "",
-            f"Watches <code>{escape(settings.wallet_address)}</code> for USDT TRC-20 transfers "
-            f"of {escape(settings.range_label)} (inclusive). Direction: {settings.directions_label}.",
-            "",
-            "/status – monitoring status and latency",
-            "/wallet – monitored wallet and filter",
-            f"/reset – restart the {settings.tx_limit_threshold}-transaction counter at 0",
-            "/help – this message",
+            SEP,
+            f"👛 <code>{escape(settings.wallet_address)}</code>",
+            "💎 USDT TRC-20 transfers",
+            *_amount_lines(settings),
+            f"🧭 <b>Direction:</b> {settings.directions_label}",
+            SEP,
+            "⌨️ <b>Commands</b>",
+            *_command_lines(settings),
         ]
     )
 
 
 def build_start_message(settings: Settings, paused: bool = False) -> str:
     head = (
-        "⏸️ <b>TRON USDT Monitor is paused.</b>"
+        ["⏸️ <b>TRON USDT Monitor is paused.</b>"]
         if paused
-        else "🤝 <b>TRON USDT Monitor is running.</b>\n\nAlerts are sent here automatically."
+        else ["🤝 <b>TRON USDT Monitor is running.</b>", "", "🔔 Alerts are sent here automatically."]
     )
-    return head + "\n\n" + "\n".join(build_help_message(settings).split("\n")[4:])
+    return "\n".join([*head, SEP, "⌨️ <b>Commands</b>", *_command_lines(settings)])
 
 
 def build_startup_notice(settings: Settings, warnings: list[str], paused: bool = False) -> str:

@@ -86,10 +86,10 @@ def test_admin_commands():
         wallet = await bot.handle_update(update(1001, "/wallet"))
         assert "💼 <b>MONITORED WALLET</b>" in wallet and WALLET in wallet
         assert "1.000000 – 1.000100 USDT" in wallet and "🟢 ACTIVE" in wallet
-        assert "Direction:\nINCOMING ⬇️ + OUTGOING ⬆️" in wallet
+        assert "Direction:</b> INCOMING ⬇️ + OUTGOING ⬆️" in wallet
         status = await bot.handle_update(update(1001, "/status@MyBot"))
-        assert "Status: 🟢 ONLINE" in status and "TRON Mainnet" in status
-        assert "Transactions Detected:\n1 total" in status and "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
+        assert "Status:</b> 🟢 ONLINE" in status and "TRON Mainnet" in status
+        assert "Detected:</b> 1 total" in status and "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" in status
         assert "SECRET" not in status and "TEST-TOKEN" not in status and "49a5e403" not in status
         assert "/wallet" in await bot.handle_update(update(1001, "/help"))
         assert "running" in await bot.handle_update(update(1001, "/start"))
@@ -103,14 +103,14 @@ def test_status_degraded_when_polls_stale():
     assert "STARTING" in build_status_message(settings, stats, 0, None, None, None, 0)
     stats.poll_failed("TronApiError: timeout")
     text = build_status_message(settings, stats, 0, None, None, None, 0)
-    assert "DEGRADED" in text and "Consecutive API errors: 1" in text
-    assert "NOT ACTIVE" in build_wallet_message(settings, stats)
+    assert "DEGRADED" in text and "Consecutive API errors:</b> 1" in text
+    assert "UNREACHABLE" in build_wallet_message(settings, stats)
 
 
 def test_wallet_message_shows_outgoing_only():
     settings = make_settings(ALERT_DIRECTIONS="OUTGOING")
     text = build_wallet_message(settings, MonitorStats())
-    assert "Direction:\nOUTGOING only ⬆️" in text
+    assert "Direction:</b> OUTGOING only ⬆️" in text
 
 
 def test_wallet_created_sent_before_each_alert():
@@ -175,3 +175,25 @@ def test_gpu_type_label_configurable():
             tx, make_settings(GPU_TYPE="RTX 5090").gpu_type)
         assert "GPU" not in build_wallet_created_message(tx, make_settings(GPU_TYPE="").gpu_type)
     run(go())
+
+
+def test_status_wallet_help_have_an_icon_on_every_line():
+    from app.formatting import build_help_message, build_start_message
+    settings = make_settings(AMOUNTS="1.01,10,20,30", ALERT_DIRECTIONS="OUTGOING")
+    stats = MonitorStats(initialized=True)
+    stats.poll_succeeded()
+    texts = [
+        build_status_message(settings, stats, 3, None, 20.0, 120.0, 0, limit_count=3),
+        build_wallet_message(settings, stats),
+        build_help_message(settings),
+        build_start_message(settings),
+        build_start_message(settings, paused=True),
+    ]
+    for text in texts:
+        for line in text.split("\n"):
+            # every non-empty line starts with an emoji/separator, an indented item or an address/code line
+            assert (not line or not line[0].isascii() or line.startswith(("<code>", "   ")) ), line
+    status = texts[0]
+    for part in ("🚦 <b>Status:</b> 🟢 ONLINE", "💵 <b>Amounts:</b>", "▫️ 20.000000 – 20.000100 USDT",
+                 "🔢 <b>Counter:</b> 3/150", "⚡ <b>API latency:</b> 20 ms (avg 120 ms)"):
+        assert part in status, part
