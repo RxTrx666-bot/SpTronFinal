@@ -36,7 +36,8 @@ class Monitor:
         self.tg = telegram
         self._outbox_event = asyncio.Event()
         self._stop = asyncio.Event()
-        self.last_scan_ok_ms: int | None = None
+        self.last_poll_ms: int | None = None
+        self.last_poll_error: str | None = None
 
     # ------------------------------------------------------------- lifecycle
     def bind_state(self) -> None:
@@ -55,6 +56,28 @@ class Monitor:
             start = now_ms() - self.s.initial_backfill_seconds * 1000
             self.db.advance_cursor(start)
             log.info("first start: scanning from %s ms (backfill %ss)", start, self.s.initial_backfill_seconds)
+
+    # ---------------------------------------------------------- pause/resume
+    @property
+    def paused(self) -> bool:
+        return self.db.is_paused()
+
+    def pause(self) -> bool:
+        """Stop polling and alerting.  Returns False if already paused."""
+        if self.paused:
+            return False
+        self.db.set_paused(True)
+        log.info("monitoring paused")
+        return True
+
+    def resume(self) -> bool:
+        """Resume from *now*: transfers made while paused are intentionally not alerted."""
+        if not self.paused:
+            return False
+        self.db.reset_cursor(now_ms())
+        self.db.set_paused(False)
+        log.info("monitoring resumed")
+        return True
 
     def stop(self) -> None:
         self._stop.set()
@@ -99,6 +122,9 @@ class Monitor:
                 accepted = self._accept_listing_item(item)
                 ts = int(item.get("block_timestamp") or 0) if isinstance(item, dict) else 0
                 page_max_ts = max(page_max_ts, ts)
+                tid = str(item.get("transaction_id", "")).lower() if isinstance(item, dict) else ""
+                if len(tid) == 64:
+                    self.db.mark_scanned(tid, ts)
                 if accepted and self.db.add_candidate(*accepted):
                     new += 1
                     log.info("candidate %s (block_ts=%s) queued for verification", accepted[0], accepted[1])
@@ -110,7 +136,7 @@ class Monitor:
                 break
         else:
             log.warning("scan stopped after %s pages; continuing next poll", self.s.max_pages_per_poll)
-        self.last_scan_ok_ms = now_ms()
+        self.db.prune_scanned(min_ts - 3_600_000)
         return new
 
     # ---------------------------------------------------------------- verify
@@ -179,10 +205,15 @@ class Monitor:
 
     # ----------------------------------------------------------------- loops
     async def poll_once(self) -> None:
+        if self.paused:
+            return
         try:
             await self.scan()
+            self.last_poll_error = None
         except TronError as exc:
+            self.last_poll_error = str(exc)
             log.warning("scan failed: %s", exc)
+        self.last_poll_ms = now_ms()
         await self.verify_due()
 
     def _heartbeat(self) -> None:
@@ -222,8 +253,9 @@ class Monitor:
             except asyncio.TimeoutError:
                 pass
 
-    async def run(self) -> None:
+    async def run(self, *extra) -> None:
         tasks = [asyncio.create_task(self.poll_loop()), asyncio.create_task(self.delivery_loop())]
+        tasks += [asyncio.create_task(coro) for coro in extra]
         await self._stop.wait()
         for t in tasks:
             t.cancel()

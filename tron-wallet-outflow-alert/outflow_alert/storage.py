@@ -7,6 +7,7 @@ Everything that must survive a restart lives here:
 * ``verified_txs``    - txids already verified (alerted / rejected / expired); never re-processed
 * ``transfers``       - every verified matching Transfer log (one row per txid+log index)
 * ``outbox``          - one row per (transfer, chat); deleted only after Telegram accepted it
+* ``scanned``         - recently listed txids, so ``kv.transfers_checked`` counts each transfer once
 """
 
 from __future__ import annotations
@@ -60,6 +61,11 @@ CREATE TABLE IF NOT EXISTS outbox (
     last_error      TEXT,
     UNIQUE (txid, log_index, chat_id)
 );
+CREATE TABLE IF NOT EXISTS scanned (
+    txid     TEXT PRIMARY KEY,
+    block_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_scanned_ts ON scanned (block_ts);
 CREATE INDEX IF NOT EXISTS ix_candidates_due ON candidates (next_attempt_at);
 CREATE INDEX IF NOT EXISTS ix_outbox_due ON outbox (next_attempt_at);
 """
@@ -133,6 +139,40 @@ class Storage:
         current = self.get_cursor()
         if current is None or ts_ms > current:
             self.set("cursor_ms", str(int(ts_ms)))
+
+    def is_paused(self) -> bool:
+        return self.get("paused") == "1"
+
+    def set_paused(self, paused: bool) -> None:
+        self.set("paused", "1" if paused else "0")
+
+    def reset_cursor(self, ts_ms: int) -> None:
+        self.set("cursor_ms", str(int(ts_ms)))
+
+    # ---------------------------------------------------------------- scanned
+    def mark_scanned(self, txid: str, block_ts: int) -> bool:
+        """Record a listed transfer; returns True (and bumps the counter) the first time it is seen."""
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            cur = self._db.execute(
+                "INSERT OR IGNORE INTO scanned (txid, block_ts) VALUES (?, ?)", (txid, int(block_ts))
+            )
+            if cur.rowcount == 1:
+                self._db.execute(
+                    "INSERT INTO kv (key, value) VALUES ('transfers_checked', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1"
+                )
+            self._db.execute("COMMIT")
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+        return cur.rowcount == 1
+
+    def prune_scanned(self, before_ts_ms: int) -> None:
+        self._db.execute("DELETE FROM scanned WHERE block_ts < ?", (int(before_ts_ms),))
+
+    def transfers_checked(self) -> int:
+        return int(self.get("transfers_checked") or 0)
 
     # ------------------------------------------------------------- candidates
     def is_known(self, txid: str) -> bool:

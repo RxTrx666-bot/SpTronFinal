@@ -123,14 +123,24 @@ class FakeTronGrid:
 
 @dataclass
 class FakeTelegram:
-    sent: list[dict] = field(default_factory=list)
+    sent: list[dict] = field(default_factory=list)          # sendMessage payloads
+    calls: list[tuple[str, dict]] = field(default_factory=list)  # every other method
+    updates: list[dict] = field(default_factory=list)       # served once by getUpdates
     fail_next: list[httpx.Response] = field(default_factory=list)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         method = request.url.path.rsplit("/", 1)[-1]
+        body = json.loads(request.content or b"{}")
         if method == "getMe":
             return httpx.Response(200, json={"ok": True, "result": {"username": "outflow_bot"}})
+        if method == "getUpdates":
+            pending = [u for u in self.updates if u["update_id"] >= body.get("offset", 0)]
+            self.updates = []
+            return httpx.Response(200, json={"ok": True, "result": pending})
+        if method != "sendMessage":
+            self.calls.append((method, body))
+            return httpx.Response(200, json={"ok": True, "result": True})
         if self.fail_next:
             return self.fail_next.pop(0)
-        self.sent.append(json.loads(request.content))
+        self.sent.append(body)
         return httpx.Response(200, json={"ok": True, "result": {"message_id": len(self.sent)}})

@@ -52,6 +52,41 @@ Why nothing is missed or duplicated:
 Amounts are integers in base units throughout. Config strings are parsed with `Decimal`, and
 a value with more than 6 decimals is rejected. Floats are never used for token amounts.
 
+## Telegram commands
+
+The bot only answers chats listed in `TELEGRAM_CHAT_ID`; everything else is ignored.
+
+| Command | |
+|---|---|
+| `/start`, `/status` | status card with ⏸️ Pause / ▶️ Resume and 🔄 Refresh buttons |
+| `/pause` | stop polling and alerting (persisted across restarts) |
+| `/resume` | resume **from now**: transfers made while paused are not alerted |
+| `/help` | command list |
+
+```
+📊 BOT STATUS
+━━━━━━━━━━━━━━━━━━
+🚦 Status: ▶️ RUNNING
+📡 Monitoring: 🟢 ACTIVE
+━━━━━━━━━━━━━━━━━━
+👛 Wallet:
+TWkvffFDMsqbmTLkMHMABmw452Hyq98cdn
+🌐 Network: TRON Mainnet
+💎 Token: USDT TRC-20
+📜 Contract:
+TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+━━━━━━━━━━━━━━━━━━
+⚡ API latency: 20 ms (avg 123 ms)
+🛰️ Mode: account · poll 2s · fast
+🕒 Last poll: 2026-10-19 14:52:03 UTC (1s ago)
+🔁 Transfers checked: 0
+```
+
+*Status* is ▶️ RUNNING or ⏸️ PAUSED. *Monitoring* is 🟢 ACTIVE (last TronGrid scan OK), 🔴 ERROR
+(last scan failed; the error is shown), 🟡 STARTING (no poll yet) or ⏸️ PAUSED. *API latency*
+is the last TronGrid request and the average of the last 100. *Transfers checked* counts every
+outgoing USDT transfer of the wallet the bot has examined, each once.
+
 ## Setup
 
 ```bash

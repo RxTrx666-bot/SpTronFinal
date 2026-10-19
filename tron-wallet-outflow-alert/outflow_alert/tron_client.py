@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
+from collections import deque
 from typing import Any
 
 import httpx
@@ -55,6 +57,15 @@ class TronClient:
             base_url=base_url, headers=headers, timeout=httpx.Timeout(timeout), transport=transport
         )
         self._max_attempts = max(1, max_attempts)
+        self._latencies_ms: deque[float] = deque(maxlen=100)
+
+    @property
+    def last_latency_ms(self) -> float | None:
+        return self._latencies_ms[-1] if self._latencies_ms else None
+
+    @property
+    def avg_latency_ms(self) -> float | None:
+        return sum(self._latencies_ms) / len(self._latencies_ms) if self._latencies_ms else None
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -64,8 +75,10 @@ class TronClient:
         delay = 0.5
         last: TronError | None = None
         for attempt in range(1, self._max_attempts + 1):
+            started = time.monotonic()
             try:
                 resp = await self._client.request(method, path, params=params, json=json)
+                self._latencies_ms.append((time.monotonic() - started) * 1000)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last = TronError(f"network error: {type(exc).__name__}", retryable=True)
             else:

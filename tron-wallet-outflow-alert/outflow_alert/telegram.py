@@ -1,8 +1,9 @@
-"""Telegram Bot API client (send-only) and alert formatting."""
+"""Telegram Bot API client, alert and status formatting."""
 
 from __future__ import annotations
 
 import html
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,10 +14,13 @@ from outflow_alert.storage import MatchedTransfer
 
 
 class SendError(Exception):
-    def __init__(self, message: str, *, retry_after: float | None = None, fatal: bool = False) -> None:
+    def __init__(
+        self, message: str, *, retry_after: float | None = None, fatal: bool = False, status: int | None = None
+    ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
         self.fatal = fatal
+        self.status = status
 
 
 class TelegramClient:
@@ -29,9 +33,10 @@ class TelegramClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def call(self, method: str, payload: dict[str, Any]) -> Any:
+    async def call(self, method: str, payload: dict[str, Any], *, timeout: float | None = None) -> Any:
         try:
-            resp = await self._client.post(method, json=payload)
+            kwargs = {"timeout": timeout} if timeout else {}
+            resp = await self._client.post(method, json=payload, **kwargs)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise SendError(f"network: {type(exc).__name__}") from exc
         try:
@@ -43,18 +48,35 @@ class TelegramClient:
         desc = str(data.get("description") or resp.text)[:200]
         if resp.status_code == 429:
             retry_after = (data.get("parameters") or {}).get("retry_after", 5)
-            raise SendError(f"rate limited: {desc}", retry_after=float(retry_after))
+            raise SendError(f"rate limited: {desc}", retry_after=float(retry_after), status=429)
         # 400/401/403/404 are configuration problems (bad token, chat id, bot not in chat).
-        raise SendError(f"telegram {resp.status_code}: {desc}", fatal=resp.status_code in (401, 404))
+        raise SendError(
+            f"telegram {resp.status_code}: {desc}", fatal=resp.status_code in (401, 404), status=resp.status_code
+        )
 
     async def get_me(self) -> dict:
         return await self.call("getMe", {})
 
-    async def send_message(self, chat_id: str, text: str) -> None:
-        await self.call(
-            "sendMessage",
-            {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
-        )
+    async def send_message(self, chat_id: str, text: str, *, reply_markup: dict | None = None) -> None:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        await self.call("sendMessage", payload)
+
+    async def edit_message(self, chat_id: str, message_id: int, text: str, *, reply_markup: dict | None = None) -> None:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id, "message_id": message_id, "text": text,
+            "parse_mode": "HTML", "disable_web_page_preview": True,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        try:
+            await self.call("editMessageText", payload)
+        except SendError as exc:
+            if "message is not modified" not in str(exc):
+                raise
 
 
 def _fmt_time(ts_ms: int | None) -> str:
@@ -86,4 +108,78 @@ def format_alert(
         f"✅ Status: {e(status)}",
         f"🔗 <a href=\"{e(tx_url.format(txid=t.txid))}\">{e(t.txid[:16])}…</a>",
     ]
+    return "\n".join(lines)
+
+
+DIVIDER = "━━━━━━━━━━━━━━━━━━"
+
+
+@dataclass(frozen=True)
+class StatusSnapshot:
+    paused: bool
+    poll_error: str | None
+    wallet: str
+    contract: str
+    last_latency_ms: float | None
+    avg_latency_ms: float | None
+    poll_interval_seconds: float
+    confirmation_mode: str
+    last_poll_ms: int | None
+    transfers_checked: int
+    now_ms: int
+
+
+def _fmt_seconds(value: float) -> str:
+    return f"{int(value)}s" if float(value).is_integer() else f"{value:g}s"
+
+
+def _fmt_ago(ts_ms: int | None, now: int) -> str:
+    if not ts_ms:
+        return "never"
+    age = max(0, (now - ts_ms) // 1000)
+    if age < 60:
+        ago = f"{age}s ago"
+    elif age < 3600:
+        ago = f"{age // 60}m ago"
+    else:
+        ago = f"{age // 3600}h {age % 3600 // 60}m ago"
+    return f"{_fmt_time(ts_ms)} ({ago})"
+
+
+def format_status(s: StatusSnapshot) -> str:
+    e = html.escape
+    if s.paused:
+        status = monitoring = "⏸️ PAUSED"
+    else:
+        status = "▶️ RUNNING"
+        if s.poll_error:
+            monitoring = "🔴 ERROR"
+        elif s.last_poll_ms is None:
+            monitoring = "🟡 STARTING"
+        else:
+            monitoring = "🟢 ACTIVE"
+    if s.last_latency_ms is None:
+        latency = "n/a"
+    else:
+        latency = f"{round(s.last_latency_ms)} ms (avg {round(s.avg_latency_ms or s.last_latency_ms)} ms)"
+    lines = [
+        "📊 BOT STATUS",
+        DIVIDER,
+        f"🚦 Status: {status}",
+        f"📡 Monitoring: {monitoring}",
+        DIVIDER,
+        "👛 Wallet:",
+        e(s.wallet),
+        "🌐 Network: TRON Mainnet",
+        "💎 Token: USDT TRC-20",
+        "📜 Contract:",
+        e(s.contract),
+        DIVIDER,
+        f"⚡ API latency: {latency}",
+        f"🛰️ Mode: account · poll {_fmt_seconds(s.poll_interval_seconds)} · {e(s.confirmation_mode)}",
+        f"🕒 Last poll: {_fmt_ago(s.last_poll_ms, s.now_ms)}",
+        f"🔁 Transfers checked: {s.transfers_checked:,}",
+    ]
+    if s.poll_error and not s.paused:
+        lines.append(f"⚠️ Last error: {e(s.poll_error[:150])}")
     return "\n".join(lines)

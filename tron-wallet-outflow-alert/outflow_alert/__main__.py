@@ -7,6 +7,7 @@ import logging
 import signal
 import sys
 
+from outflow_alert.commands import CommandHandler
 from outflow_alert.config import ConfigError, load_settings
 from outflow_alert.monitor import Monitor, StateMismatch
 from outflow_alert.storage import Storage
@@ -77,8 +78,9 @@ async def amain(check_only: bool) -> int:
                 loop.add_signal_handler(sig, monitor.stop)
             except NotImplementedError:  # pragma: no cover - Windows
                 pass
-        log.info("cursor=%s pending=%s outbox=%s", storage.get_cursor(), storage.pending_count(), storage.outbox_count())
-        await monitor.run()
+        log.info("cursor=%s pending=%s outbox=%s paused=%s", storage.get_cursor(), storage.pending_count(),
+                 storage.outbox_count(), storage.is_paused())
+        await monitor.run(CommandHandler(monitor, telegram).run())
         log.info("stopped")
         return 0
     finally:
