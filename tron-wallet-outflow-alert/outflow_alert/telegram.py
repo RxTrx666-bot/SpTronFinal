@@ -57,13 +57,19 @@ class TelegramClient:
     async def get_me(self) -> dict:
         return await self.call("getMe", {})
 
-    async def send_message(self, chat_id: str, text: str, *, reply_markup: dict | None = None) -> None:
+    async def send_message(self, chat_id: str, text: str, *, reply_markup: dict | None = None) -> int | None:
+        """Send a message; returns its Telegram message id."""
         payload: dict[str, Any] = {
             "chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True,
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-        await self.call("sendMessage", payload)
+        result = await self.call("sendMessage", payload)
+        return result.get("message_id") if isinstance(result, dict) else None
+
+    async def delete_message(self, chat_id: str, message_id: int) -> None:
+        """Delete one of the bot's own messages (Telegram allows this for 48 h in private chats)."""
+        await self.call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
 
     async def edit_message(self, chat_id: str, message_id: int, text: str, *, reply_markup: dict | None = None) -> None:
         payload: dict[str, Any] = {
@@ -79,7 +85,7 @@ class TelegramClient:
                 raise
 
 
-def _fmt_time(ts_ms: int | None) -> str:
+def format_time(ts_ms: int | None) -> str:
     if not ts_ms:
         return "unknown"
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -104,7 +110,7 @@ def format_alert(
         f"💸 <b>{e(amount)} USDT</b>  <i>({e(exact)})</i>",
         f"📤 From: <a href=\"{e(address_url.format(address=t.from_address))}\"><code>{e(t.from_address)}</code></a>",
         f"📥 To: <a href=\"{e(address_url.format(address=t.to_address))}\"><code>{e(t.to_address)}</code></a>",
-        f"🧱 Block: <code>{e(str(t.block_number or '?'))}</code> · {e(_fmt_time(t.block_ts))}",
+        f"🧱 Block: <code>{e(str(t.block_number or '?'))}</code> · {e(format_time(t.block_ts))}",
         f"✅ Status: {e(status)}",
         f"🔗 <a href=\"{e(tx_url.format(txid=t.txid))}\">{e(t.txid[:16])}…</a>",
     ]
@@ -143,7 +149,7 @@ def _fmt_ago(ts_ms: int | None, now: int) -> str:
         ago = f"{age // 60}m ago"
     else:
         ago = f"{age // 3600}h {age % 3600 // 60}m ago"
-    return f"{_fmt_time(ts_ms)} ({ago})"
+    return f"{format_time(ts_ms)} ({ago})"
 
 
 def format_status(s: StatusSnapshot) -> str:

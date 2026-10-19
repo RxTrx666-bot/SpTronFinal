@@ -1,17 +1,27 @@
-"""Entry point: ``python -m outflow_alert`` (run) or ``python -m outflow_alert check`` (startup checks only)."""
+"""Entry point.
+
+  python -m outflow_alert                     run the bot
+  python -m outflow_alert check               startup checks only
+  python -m outflow_alert alerts [N]          list the last N alerts (default 20)
+  python -m outflow_alert delete <txid|last> [CHAT_ID]
+                                              delete an alert from every chat, or only from CHAT_ID
+"""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import signal
 import sys
 
 from outflow_alert.commands import CommandHandler
+from outflow_alert.amounts import format_units
 from outflow_alert.config import ConfigError, load_settings
+from outflow_alert.deletion import delete_alert, format_results
 from outflow_alert.monitor import Monitor, StateMismatch
 from outflow_alert.storage import Storage
-from outflow_alert.telegram import SendError, TelegramClient
+from outflow_alert.telegram import SendError, TelegramClient, format_time
 from outflow_alert.tron_client import TronClient, TronError
 from outflow_alert.verifier import TokenCheckError, verify_token
 
@@ -90,9 +100,69 @@ async def amain(check_only: bool) -> int:
             storage.close()
 
 
+async def list_alerts(settings, limit: int) -> int:
+    storage = Storage(settings.db_path)
+    try:
+        alerts = storage.recent_alerts(limit)
+        if not alerts:
+            print("no alerts yet")
+        for a in alerts:
+            chats = ", ".join(a.chats) or "-"
+            print(f"{format_time(a.block_ts)}  {format_units(a.amount_raw):>10} USDT  -> {a.to_address}\n"
+                  f"    txid {a.txid}\n    in chats: {chats}")
+        return 0
+    finally:
+        storage.close()
+
+
+async def delete_command(settings, target: str, chat_id: str | None) -> int:
+    storage = Storage(settings.db_path)
+    telegram = TelegramClient(settings.telegram_bot_token)
+    try:
+        if target == "last":
+            recent = storage.recent_alerts(1)
+            if not recent:
+                print("no alerts yet")
+                return 1
+            txid, log_index = recent[0].txid, recent[0].log_index
+        else:
+            matches = storage.resolve_txid(target)
+            if len(matches) != 1:
+                print("no alert with that txid" if not matches else f"{len(matches)} alerts match; use more characters")
+                return 1
+            txid, log_index = matches[0], None
+        print(f"alert {txid}")
+        results = await delete_alert(storage, telegram, txid, log_index, chat_id)
+        print(format_results(results))
+        return 0 if results and all(r.ok for r in results) else 1
+    finally:
+        await telegram.close()
+        storage.close()
+
+
 def main() -> None:
-    check_only = len(sys.argv) > 1 and sys.argv[1] == "check"
-    sys.exit(asyncio.run(amain(check_only)))
+    parser = argparse.ArgumentParser(prog="python -m outflow_alert")
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("run", help="run the bot (default)")
+    sub.add_parser("check", help="startup checks only")
+    p_list = sub.add_parser("alerts", help="list recent alerts")
+    p_list.add_argument("limit", nargs="?", type=int, default=20)
+    p_del = sub.add_parser("delete", help="delete a sent alert from Telegram")
+    p_del.add_argument("target", help="txid (or its first characters), or 'last'")
+    p_del.add_argument("chat_id", nargs="?", help="only delete it from this chat")
+    args = parser.parse_args()
+
+    if args.cmd in ("alerts", "delete"):
+        try:
+            settings = load_settings()
+        except ConfigError as exc:
+            print(f"configuration error: {exc}", file=sys.stderr)
+            sys.exit(2)
+        setup_logging("WARNING")
+        if args.cmd == "alerts":
+            sys.exit(asyncio.run(list_alerts(settings, args.limit)))
+        sys.exit(asyncio.run(delete_command(settings, args.target, args.chat_id)))
+    sys.exit(asyncio.run(amain(args.cmd == "check")))
 
 
 if __name__ == "__main__":

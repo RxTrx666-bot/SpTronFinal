@@ -185,7 +185,7 @@ class Monitor:
         sent = 0
         for item in self.db.due_outbox():
             try:
-                await self.tg.send_message(item.chat_id, item.text)
+                message_id = await self.tg.send_message(item.chat_id, item.text)
             except SendError as exc:
                 if exc.retry_after is not None:
                     delay = int(exc.retry_after * 1000) + 250
@@ -198,7 +198,7 @@ class Monitor:
                 if exc.retry_after is not None:
                     break  # rate limited: back off the whole queue
                 continue
-            self.db.outbox_sent(item.id)
+            self.db.outbox_sent(item.id, message_id)
             sent += 1
             log.info("alert for %s log#%s delivered to %s", item.txid, item.log_index, item.chat_id)
         return sent

@@ -61,6 +61,7 @@ The bot only answers chats listed in `TELEGRAM_CHAT_ID`; everything else is igno
 | `/start`, `/status` | status card with ⏸️ Pause / ▶️ Resume and 🔄 Refresh buttons |
 | `/pause` | stop polling and alerting (persisted across restarts) |
 | `/resume` | resume **from now**: transfers made while paused are not alerted |
+| `/delete` | reply to an alert with `/delete` to remove it from **every** chat (or `/delete <txid>`) |
 | `/help` | command list |
 
 ```
@@ -86,6 +87,25 @@ TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
 (last scan failed; the error is shown), 🟡 STARTING (no poll yet) or ⏸️ PAUSED. *API latency*
 is the last TronGrid request and the average of the last 100. *Transfers checked* counts every
 outgoing USDT transfer of the wallet the bot has examined, each once.
+
+## Deleting alerts
+
+The bot saves the Telegram message ID of every alert it sends, so it can delete them later from
+any recipient's chat, including chats you can't open. Telegram only lets a bot delete its own
+messages in private chats for **48 hours** after sending them.
+
+- **In Telegram:** reply to the alert with `/delete`. It is removed from every chat.
+- **On the VPS:**
+
+```bash
+docker compose exec outflow-alert python -m outflow_alert alerts                       # list recent alerts
+docker compose exec outflow-alert python -m outflow_alert delete last                  # newest alert, all chats
+docker compose exec outflow-alert python -m outflow_alert delete last 8972433273       # newest alert, one chat
+docker compose exec outflow-alert python -m outflow_alert delete 3f9a1c 8972433273     # by txid (first characters)
+```
+
+If an alert hasn't been delivered yet (for example the person never pressed Start), deleting it
+cancels the queued copy.
 
 ## Setup
 

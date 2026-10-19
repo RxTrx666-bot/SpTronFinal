@@ -127,6 +127,10 @@ class FakeTelegram:
     calls: list[tuple[str, dict]] = field(default_factory=list)  # every other method
     updates: list[dict] = field(default_factory=list)       # served once by getUpdates
     fail_next: list[httpx.Response] = field(default_factory=list)
+    delete_error: str = ""  # e.g. "Bad Request: message can't be deleted"
+
+    def deleted(self) -> list[tuple[str, int]]:
+        return [(b["chat_id"], b["message_id"]) for m, b in self.calls if m == "deleteMessage"]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         method = request.url.path.rsplit("/", 1)[-1]
@@ -137,6 +141,8 @@ class FakeTelegram:
             pending = [u for u in self.updates if u["update_id"] >= body.get("offset", 0)]
             self.updates = []
             return httpx.Response(200, json={"ok": True, "result": pending})
+        if method == "deleteMessage" and self.delete_error:
+            return httpx.Response(400, json={"ok": False, "description": self.delete_error})
         if method != "sendMessage":
             self.calls.append((method, body))
             return httpx.Response(200, json={"ok": True, "result": True})

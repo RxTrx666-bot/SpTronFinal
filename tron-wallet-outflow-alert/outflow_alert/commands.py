@@ -5,6 +5,8 @@ Only chats listed in TELEGRAM_CHAT_ID are answered; everything else is ignored.
   /start, /status  - status card with Pause / Resume / Refresh buttons
   /pause           - stop polling and alerting
   /resume          - resume from now (transfers made while paused are not alerted)
+  /delete          - reply to an alert with /delete to remove it from every chat;
+                     /delete <txid prefix> does the same without replying
   /help            - command list
 """
 
@@ -13,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from outflow_alert.deletion import delete_alert, format_results
 from outflow_alert.monitor import Monitor
 from outflow_alert.storage import now_ms
 from outflow_alert.telegram import SendError, StatusSnapshot, TelegramClient, format_status
@@ -24,6 +27,7 @@ BOT_COMMANDS = [
     {"command": "status", "description": "Bot status"},
     {"command": "pause", "description": "Pause monitoring"},
     {"command": "resume", "description": "Resume monitoring"},
+    {"command": "delete", "description": "Reply to an alert to delete it for everyone"},
     {"command": "help", "description": "Show commands"},
 ]
 HELP_TEXT = (
@@ -31,6 +35,7 @@ HELP_TEXT = (
     "/status – bot status\n"
     "/pause – pause monitoring and alerts\n"
     "/resume – resume monitoring (from now)\n"
+    "/delete – reply to an alert with /delete to remove it from every chat\n"
     "/help – this list"
 )
 
@@ -99,8 +104,33 @@ class CommandHandler:
             await self.tg.send_message(
                 chat_id, f"{notice}\n\n{self.status_text()}", reply_markup=status_keyboard(self.m.paused)
             )
+        elif command == "delete":
+            await self._handle_delete(chat_id, message, text)
         elif command == "help":
             await self.tg.send_message(chat_id, HELP_TEXT)
+
+    async def _handle_delete(self, chat_id: str, message: dict, text: str) -> None:
+        reply = message.get("reply_to_message") or {}
+        args = text.split()[1:]
+        if reply.get("message_id"):
+            sent = self.m.db.sent_message(chat_id, reply["message_id"])
+            if sent is None:
+                await self.tg.send_message(chat_id, "That message is not an alert I have on record.")
+                return
+            txid, log_index = sent.txid, sent.log_index
+        elif args:
+            matches = self.m.db.resolve_txid(args[0])
+            if len(matches) != 1:
+                await self.tg.send_message(
+                    chat_id, "No alert with that txid." if not matches else "Several alerts match; use more characters."
+                )
+                return
+            txid, log_index = matches[0], None
+        else:
+            await self.tg.send_message(chat_id, "Reply to an alert with /delete, or send /delete &lt;txid&gt;.")
+            return
+        results = await delete_alert(self.m.db, self.tg, txid, log_index)
+        await self.tg.send_message(chat_id, f"🗑 Alert {txid[:16]}…\n{format_results(results)}")
 
     async def _handle_callback(self, query: dict) -> None:
         message = query.get("message") or {}

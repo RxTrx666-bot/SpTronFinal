@@ -7,6 +7,7 @@ Everything that must survive a restart lives here:
 * ``verified_txs``    - txids already verified (alerted / rejected / expired); never re-processed
 * ``transfers``       - every verified matching Transfer log (one row per txid+log index)
 * ``outbox``          - one row per (transfer, chat); deleted only after Telegram accepted it
+* ``sent_messages``   - Telegram message ids of delivered alerts (so they can be deleted later)
 * ``scanned``         - recently listed txids, so ``kv.transfers_checked`` counts each transfer once
 """
 
@@ -61,6 +62,15 @@ CREATE TABLE IF NOT EXISTS outbox (
     last_error      TEXT,
     UNIQUE (txid, log_index, chat_id)
 );
+CREATE TABLE IF NOT EXISTS sent_messages (
+    txid       TEXT NOT NULL,
+    log_index  INTEGER NOT NULL,
+    chat_id    TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    sent_at    INTEGER NOT NULL,
+    PRIMARY KEY (chat_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS ix_sent_txid ON sent_messages (txid, log_index);
 CREATE TABLE IF NOT EXISTS scanned (
     txid     TEXT PRIMARY KEY,
     block_ts INTEGER NOT NULL
@@ -91,6 +101,25 @@ class OutboxItem:
     chat_id: str
     text: str
     attempts: int
+
+
+@dataclass(frozen=True)
+class SentMessage:
+    txid: str
+    log_index: int
+    chat_id: str
+    message_id: int
+    sent_at: int
+
+
+@dataclass(frozen=True)
+class AlertSummary:
+    txid: str
+    log_index: int
+    amount_raw: int
+    to_address: str
+    block_ts: int | None
+    chats: tuple[str, ...]  # chats where the alert is still present (deletable)
 
 
 @dataclass(frozen=True)
@@ -266,8 +295,72 @@ class Storage:
         ).fetchall()
         return [OutboxItem(r["id"], r["txid"], r["log_index"], r["chat_id"], r["text"], r["attempts"]) for r in rows]
 
-    def outbox_sent(self, item_id: int) -> None:
-        self._db.execute("DELETE FROM outbox WHERE id = ?", (item_id,))
+    def outbox_sent(self, item_id: int, message_id: int | None = None) -> None:
+        """Remove a delivered outbox row and remember the Telegram message id it produced."""
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._db.execute("SELECT txid, log_index, chat_id FROM outbox WHERE id = ?", (item_id,)).fetchone()
+            if row is not None and message_id is not None:
+                self._db.execute(
+                    "INSERT OR IGNORE INTO sent_messages (txid, log_index, chat_id, message_id, sent_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (row["txid"], row["log_index"], row["chat_id"], int(message_id), now_ms()),
+                )
+            self._db.execute("DELETE FROM outbox WHERE id = ?", (item_id,))
+            self._db.execute("COMMIT")
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+
+    # ----------------------------------------------------------- sent alerts
+    def sent_messages_for(self, txid: str, log_index: int | None = None) -> list[SentMessage]:
+        sql = "SELECT txid, log_index, chat_id, message_id, sent_at FROM sent_messages WHERE txid = ?"
+        args: tuple = (txid,)
+        if log_index is not None:
+            sql += " AND log_index = ?"
+            args += (log_index,)
+        rows = self._db.execute(sql + " ORDER BY chat_id", args).fetchall()
+        return [SentMessage(r["txid"], r["log_index"], r["chat_id"], r["message_id"], r["sent_at"]) for r in rows]
+
+    def sent_message(self, chat_id: str, message_id: int) -> SentMessage | None:
+        r = self._db.execute(
+            "SELECT txid, log_index, chat_id, message_id, sent_at FROM sent_messages WHERE chat_id = ? AND message_id = ?",
+            (str(chat_id), int(message_id)),
+        ).fetchone()
+        return SentMessage(r["txid"], r["log_index"], r["chat_id"], r["message_id"], r["sent_at"]) if r else None
+
+    def forget_sent_message(self, chat_id: str, message_id: int) -> None:
+        self._db.execute("DELETE FROM sent_messages WHERE chat_id = ? AND message_id = ?", (str(chat_id), int(message_id)))
+
+    def drop_pending_outbox(self, txid: str, log_index: int | None = None, chat_id: str | None = None) -> int:
+        """Cancel not-yet-delivered copies of an alert."""
+        sql, args = "DELETE FROM outbox WHERE txid = ?", [txid]
+        if log_index is not None:
+            sql += " AND log_index = ?"
+            args.append(log_index)
+        if chat_id is not None:
+            sql += " AND chat_id = ?"
+            args.append(str(chat_id))
+        return self._db.execute(sql, args).rowcount
+
+    def resolve_txid(self, prefix: str) -> list[str]:
+        """Alerted txids starting with ``prefix`` (case-insensitive)."""
+        rows = self._db.execute(
+            "SELECT DISTINCT txid FROM transfers WHERE txid LIKE ? ORDER BY txid", (prefix.lower() + "%",)
+        ).fetchall()
+        return [r["txid"] for r in rows]
+
+    def recent_alerts(self, limit: int = 20) -> list[AlertSummary]:
+        rows = self._db.execute(
+            "SELECT txid, log_index, amount_raw, to_address, block_ts FROM transfers "
+            "ORDER BY created_at DESC, txid, log_index LIMIT ?",
+            (limit,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            chats = tuple(m.chat_id for m in self.sent_messages_for(r["txid"], r["log_index"]))
+            out.append(AlertSummary(r["txid"], r["log_index"], int(r["amount_raw"]), r["to_address"], r["block_ts"], chats))
+        return out
 
     def outbox_retry(self, item_id: int, delay_ms: int, error: str) -> None:
         self._db.execute(
