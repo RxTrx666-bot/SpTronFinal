@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#1F2937"/>
+      <stop offset="1" stop-color="#0B0F17"/>
+    </radialGradient>
+    <linearGradient id="sh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="640" height="640" fill="url(#bg)"/>
+  <g filter="url(#glow)">
+    <path d="M320 130 L470 185 L470 315 C 470 410 405 475 320 512 C 235 475 170 410 170 315 L170 185 Z" fill="url(#sh)"/>
+  </g>
+  <path d="M320 158 L446 204 L446 315 C 446 396 392 452 320 484 C 248 452 194 396 194 315 L194 204 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="5"/>
+  <polyline points="205,330 268,330 292,272 330,388 356,302 376,330 435,330" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
