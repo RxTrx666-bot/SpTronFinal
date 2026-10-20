@@ -61,7 +61,7 @@ The bot only answers chats listed in `TELEGRAM_CHAT_ID`; everything else is igno
 | `/start`, `/status` | status card with ⏸️ Pause / ▶️ Resume and 🔄 Refresh buttons |
 | `/pause` | stop polling and alerting (persisted across restarts) |
 | `/resume` | resume **from now**: transfers made while paused are not alerted |
-| `/delete` | reply to an alert with `/delete` to remove it from **every** chat (or `/delete <txid>`) |
+| `/delete` | (not in the menu) reply to an alert with `/delete` to remove it from **every** chat |
 | `/help` | command list |
 
 ```

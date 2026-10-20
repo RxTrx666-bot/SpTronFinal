@@ -27,7 +27,6 @@ BOT_COMMANDS = [
     {"command": "status", "description": "Bot status"},
     {"command": "pause", "description": "Pause monitoring"},
     {"command": "resume", "description": "Resume monitoring"},
-    {"command": "delete", "description": "Reply to an alert to delete it for everyone"},
     {"command": "help", "description": "Show commands"},
 ]
 HELP_TEXT = (
@@ -35,7 +34,6 @@ HELP_TEXT = (
     "/status – bot status\n"
     "/pause – pause monitoring and alerts\n"
     "/resume – resume monitoring (from now)\n"
-    "/delete – reply to an alert with /delete to remove it from every chat\n"
     "/help – this list"
 )
 
@@ -130,7 +128,7 @@ class CommandHandler:
             await self.tg.send_message(chat_id, "Reply to an alert with /delete, or send /delete &lt;txid&gt;.")
             return
         results = await delete_alert(self.m.db, self.tg, txid, log_index)
-        await self.tg.send_message(chat_id, f"🗑 Alert {txid[:16]}…\n{format_results(results)}")
+        await self.tg.send_message(chat_id, f"Alert {txid[:16]}…\n{format_results(results)}")
 
     async def _handle_callback(self, query: dict) -> None:
         message = query.get("message") or {}
