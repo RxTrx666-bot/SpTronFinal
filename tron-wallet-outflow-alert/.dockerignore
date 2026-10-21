@@ -8,3 +8,4 @@ data/
 .venv/
 tests/
 .git
+backups/

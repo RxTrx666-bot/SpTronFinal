@@ -136,6 +136,25 @@ read-only root filesystem. Its health check fails if the poll loop stops writing
 Install to `/opt/tron-wallet-outflow-alert` with a `.venv`, then
 `cp systemd/tron-outflow-alert.service /etc/systemd/system/ && systemctl enable --now tron-outflow-alert`.
 
+## Backup and restore
+
+What needs a backup: the code is on GitHub, but `.env` (tokens, chat IDs) and the SQLite database
+(cursor, pause state, alert history, Telegram message IDs) only exist on the server.
+
+```bash
+./backup.sh                                          # -> backups/backup-<UTC time>.tar.gz, keeps the newest 30
+./restore.sh backups/backup-20261021-030000.tar.gz   # restores database + .env and restarts the bot
+```
+
+`backup.sh` is safe while the bot runs (SQLite online backup). Daily at 03:17 UTC via cron:
+
+```bash
+(crontab -l 2>/dev/null; echo "17 3 * * * /opt/sptron-outflow/tron-wallet-outflow-alert/backup.sh >> /var/log/outflow-backup.log 2>&1") | crontab -
+```
+
+Backups contain your tokens: keep a copy **off** the server (e.g. `scp` to your PC) so losing the VPS
+doesn't lose them, and don't share them.
+
 ## Configuration
 
 | Variable | Default | Notes |

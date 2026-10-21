@@ -6,3 +6,5 @@ data/
 *.db-*
 .pytest_cache/
 .venv/
+backups/
+.env.before-restore
