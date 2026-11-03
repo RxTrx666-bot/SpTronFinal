@@ -98,6 +98,7 @@ def format_alert(
     confirmation_mode: str,
     tx_url: str,
     address_url: str,
+    match_all: bool = False,
 ) -> str:
     e = html.escape
     amount = format_units(t.amount_raw, decimals)
@@ -107,7 +108,7 @@ def format_alert(
     lines = [
         "🚨 <b>Outgoing USDT transfer</b>",
         "",
-        f"💸 <b>{e(amount)} USDT</b>  <i>({e(exact)})</i>",
+        f"💸 <b>{e(amount)} USDT</b>" + ("" if match_all else f"  <i>({e(exact)})</i>"),
         f"📤 From: <a href=\"{e(address_url.format(address=t.from_address))}\"><code>{e(t.from_address)}</code></a>",
         f"📥 To: <a href=\"{e(address_url.format(address=t.to_address))}\"><code>{e(t.to_address)}</code></a>",
         f"🧱 Block: <code>{e(str(t.block_number or '?'))}</code> · {e(format_time(t.block_ts))}",

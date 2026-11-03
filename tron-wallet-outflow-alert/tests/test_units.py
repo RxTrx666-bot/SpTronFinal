@@ -81,3 +81,14 @@ def test_config_defaults_and_validation():
         load_settings({**BASE_ENV, "AMOUNT_TOLERANCE": "0.0000001"}, env_file=None)
     with pytest.raises(ConfigError, match="WALLET_ADDRESS"):
         load_settings({**BASE_ENV, "WALLET_ADDRESS": "Tnotanaddress"}, env_file=None)
+
+
+def test_amounts_all():
+    for word in ("all", "ALL", " * ", "any"):
+        assert parse_amount_list(word) == ()
+    assert match_target(1, (), 100) == 1
+    assert match_target(123_456_789, (), 100) == 123_456_789
+    assert match_target(0, (), 100) is None
+    s = load_settings({**BASE_ENV, "AMOUNTS": "all"}, env_file=None)
+    assert s.match_all and s.amounts_raw == () and "amounts=all" in s.describe()
+    assert not load_settings(dict(BASE_ENV), env_file=None).match_all

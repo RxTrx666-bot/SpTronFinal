@@ -43,14 +43,22 @@ class Settings:
     explorer_address_url: str = "https://tronscan.org/#/address/{address}"
 
     @property
+    def match_all(self) -> bool:
+        """AMOUNTS=all: alert on every outgoing transfer."""
+        return not self.amounts_raw
+
+    @property
     def wallet_hex(self) -> str:
         return base58_to_hex(self.wallet)
 
     def describe(self) -> str:
-        amounts = ", ".join(format_units(a, self.token_decimals) for a in self.amounts_raw)
+        if self.match_all:
+            amounts = "amounts=all"
+        else:
+            amounts = "amounts=[" + ", ".join(format_units(a, self.token_decimals) for a in self.amounts_raw) + "] "
+            amounts += f"tolerance={format_units(self.tolerance_raw, self.token_decimals)}"
         return (
-            f"wallet={self.wallet} contract={self.usdt_contract} amounts=[{amounts}] "
-            f"tolerance={format_units(self.tolerance_raw, self.token_decimals)} "
+            f"wallet={self.wallet} contract={self.usdt_contract} {amounts} "
             f"poll={self.poll_interval_seconds}s lookback={self.lookback_seconds}s "
             f"mode={self.confirmation_mode} chats={len(self.telegram_chat_ids)} db={self.db_path}"
         )

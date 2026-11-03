@@ -169,3 +169,20 @@ async def test_run_loops_end_to_end(build, grid, tg):
     m.stop()
     await asyncio.wait_for(task, timeout=5)
     assert len(tg.sent) == 1 and "30 USDT" in tg.sent[0]["text"]
+
+
+async def test_amounts_all_alerts_every_outgoing_transfer(build, grid, tg):
+    m = build(amounts_raw=())
+    ts = now_ms()
+    grid.add_transfer(1, 1, ts=ts)                                        # 0.000001 USDT
+    grid.add_transfer(2, 5_000_000, ts=ts + 1)                            # 5 USDT
+    grid.add_transfer(3, 123_456_789_000, ts=ts + 2)                      # 123,456.789 USDT
+    grid.add_transfer(4, 0, ts=ts + 3)                                    # zero: ignored
+    grid.add_transfer(5, 7_000_000, ts=ts + 4, sender=OTHER, recipient=WALLET)  # incoming: ignored
+    grid.add_transfer(6, 8_000_000, ts=ts + 5, receipt="OUT_OF_ENERGY")   # failed: ignored
+    await cycle(m)
+    texts = [s["text"] for s in tg.sent]
+    assert len(texts) == 3
+    assert "0.000001 USDT" in texts[0] and "5 USDT" in texts[1] and "123,456.789 USDT" in texts[2]
+    assert not any("exact match" in t or "filter" in t for t in texts)
+    assert m.db.verified_outcome(txid(6)) == "rejected"

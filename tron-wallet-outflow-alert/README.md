@@ -164,7 +164,7 @@ doesn't lose them, and don't share them.
 | `TELEGRAM_CHAT_ID` | – | required; comma-separated for several chats |
 | `WALLET_ADDRESS` | `TWkvff…cdn` | |
 | `USDT_CONTRACT` | `TR7NHq…Lj6t` | checked against `symbol()`/`decimals()` at startup |
-| `AMOUNTS` | `1.01,10,20,30` | USDT, at most 6 decimals |
+| `AMOUNTS` | `1.01,10,20,30` | USDT, at most 6 decimals; `all` = every outgoing transfer |
 | `AMOUNT_TOLERANCE` | `0.000100` | inclusive (±100 base units) |
 | `POLL_INTERVAL_SECONDS` | `2` | min 0.5 |
 | `LOOKBACK_SECONDS` | `120` | overlap re-scanned on every poll |

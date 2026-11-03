@@ -29,7 +29,13 @@ def to_base_units(text: str, decimals: int = USDT_DECIMALS) -> int:
     return int(scaled)
 
 
+ALL_AMOUNTS = ("all", "*", "any")
+
+
 def parse_amount_list(text: str, decimals: int = USDT_DECIMALS) -> tuple[int, ...]:
+    """'1.01,10' -> (1010000, 10000000).  'all' -> () meaning every amount."""
+    if text.strip().lower() in ALL_AMOUNTS:
+        return ()
     parts = [p.strip() for p in text.split(",") if p.strip()]
     if not parts:
         raise ValueError("AMOUNTS must contain at least one amount")
@@ -55,7 +61,13 @@ def parse_raw_value(value: object) -> int:
 
 
 def match_target(amount_raw: int, targets: Sequence[int] | Iterable[int], tolerance_raw: int) -> int | None:
-    """Return the closest target within ``tolerance_raw`` (inclusive), else ``None``."""
+    """Return the closest target within ``tolerance_raw`` (inclusive), else ``None``.
+
+    An empty ``targets`` means "all amounts": any non-zero amount matches itself.
+    """
+    targets = tuple(targets)
+    if not targets:
+        return amount_raw if amount_raw > 0 else None
     best: int | None = None
     for target in targets:
         diff = abs(amount_raw - target)

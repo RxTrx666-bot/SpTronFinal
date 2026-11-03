@@ -168,7 +168,8 @@ class Monitor:
                 continue
             alerts = [
                 (m, chat, format_alert(m, decimals=self.s.token_decimals, confirmation_mode=self.s.confirmation_mode,
-                                       tx_url=self.s.explorer_tx_url, address_url=self.s.explorer_address_url))
+                                       tx_url=self.s.explorer_tx_url, address_url=self.s.explorer_address_url,
+                                       match_all=self.s.match_all))
                 for m in result.matches
                 for chat in self.s.telegram_chat_ids
             ]
