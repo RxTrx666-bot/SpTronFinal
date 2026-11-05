@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     # "all":       send every alert type.
     notification_mode: str = "watchlist"
     # Title line added at the top of every notification (empty = none).
+    # Several titles separated by commas are used in turn, one per notification.
     notification_title: str = "🏦 OKX wallet detected"
 
     # --------------------------------------------------------- Maintenance
@@ -213,6 +214,10 @@ class Settings(BaseSettings):
     @property
     def is_official_usdt_contract(self) -> bool:
         return self.usdt_contract_address == OFFICIAL_USDT_TRC20_CONTRACT
+
+    @property
+    def notification_titles(self) -> list[str]:
+        return [t.strip() for t in self.notification_title.split(",") if t.strip()]
 
     @property
     def telegram_chat_ids(self) -> list[str]:

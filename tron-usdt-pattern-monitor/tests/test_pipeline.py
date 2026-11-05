@@ -403,3 +403,13 @@ async def test_notification_title_on_every_message(make_harness):
     for m in h.rec.messages:
         assert m.startswith("<b>🏦 OKX wallet detected</b>\n")
         assert_telegram_html(m)
+
+
+async def test_notification_titles_alternate(make_harness):
+    h = await make_harness(notification_title="🦊 Rabby Wallet detected, 🛡 Exodus Wallet detected")
+    for i in range(4):
+        await h.app.send_system(f"t{i}", "hello")
+    await h.app.dispatcher.flush()
+    firsts = [m.split("\n", 1)[0] for m in h.rec.messages]
+    assert set(firsts) == {"<b>🦊 Rabby Wallet detected</b>", "<b>🛡 Exodus Wallet detected</b>"}
+    assert firsts[0] != firsts[1] and firsts[0] == firsts[2]  # strictly alternating

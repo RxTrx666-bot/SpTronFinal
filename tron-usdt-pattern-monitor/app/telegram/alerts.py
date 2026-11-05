@@ -117,10 +117,12 @@ class AlertDispatcher:
             alert.status = AlertStatus.SENDING.value
             alert.attempts += 1
             alert_id, text, attempts = alert.id, alert.message_text, alert.attempts
-        if self.s.notification_title.strip():
+        titles = self.s.notification_titles
+        if titles:
             import html as _html
 
-            text = f"<b>{_html.escape(self.s.notification_title.strip())}</b>\n{text}"
+            title = titles[alert_id % len(titles)]  # alternate, stable across retries
+            text = f"<b>{_html.escape(title)}</b>\n{text}"
         start = _utcnow()
         try:
             message_id = await self.sink.send(text)
