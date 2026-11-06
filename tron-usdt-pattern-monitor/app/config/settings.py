@@ -133,6 +133,12 @@ class Settings(BaseSettings):
     # Several titles separated by commas are used in turn, one per notification.
     notification_title: str = "🏦 OKX wallet detected"
 
+    # Optional second Telegram bot: receives the same notifications, with its own
+    # chats and its own title(s) (comma-separated titles alternate).
+    bot2_telegram_bot_token: str = ""
+    bot2_telegram_chat_id: str = ""
+    bot2_notification_title: str = ""
+
     # --------------------------------------------------------- Maintenance
     analysis_workers: int = 2
     maintenance_interval_seconds: int = 15
@@ -217,12 +223,23 @@ class Settings(BaseSettings):
 
     @property
     def notification_titles(self) -> list[str]:
-        return [t.strip() for t in self.notification_title.split(",") if t.strip()]
+        return _split_titles(self.notification_title)
+
+    @property
+    def bot2_titles(self) -> list[str]:
+        return _split_titles(self.bot2_notification_title)
+
+    @property
+    def bot2_chat_ids(self) -> list[str]:
+        return _split_ids(self.bot2_telegram_chat_id)
+
+    @property
+    def bot2_enabled(self) -> bool:
+        return bool(self.bot2_telegram_bot_token and self.bot2_chat_ids)
 
     @property
     def telegram_chat_ids(self) -> list[str]:
-        ids = [c.strip() for c in self.telegram_chat_id.replace(";", ",").split(",")]
-        return list(dict.fromkeys(c for c in ids if c))
+        return _split_ids(self.telegram_chat_id)
 
     @property
     def muted_alert_types(self) -> set[str]:
@@ -233,6 +250,15 @@ class Settings(BaseSettings):
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_ids)
+
+
+def _split_titles(value: str) -> list[str]:
+    return [t.strip() for t in value.split(",") if t.strip()]
+
+
+def _split_ids(value: str) -> list[str]:
+    ids = [c.strip() for c in value.replace(";", ",").split(",")]
+    return list(dict.fromkeys(c for c in ids if c))
 
 
 @lru_cache(maxsize=1)

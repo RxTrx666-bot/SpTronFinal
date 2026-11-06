@@ -60,7 +60,12 @@ class Application:
             else:
                 log.warning("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set - alerts are printed to stdout")
                 sink = ConsoleSink()
-        self.dispatcher = AlertDispatcher(settings, self.session_factory, sink)
+        self.telegram2: TelegramClient | None = None
+        extra_channels = []
+        if settings.bot2_enabled:
+            self.telegram2 = TelegramClient(settings.bot2_telegram_bot_token, settings.telegram_timeout_seconds)
+            extra_channels.append((TelegramSink(self.telegram2, settings.bot2_chat_ids), settings.bot2_titles))
+        self.dispatcher = AlertDispatcher(settings, self.session_factory, sink, extra_channels)
         self.stats = PipelineStats()
         self.analysis = AnalysisService(
             settings, self.session_factory, self.clock, self.cache, self.manager, self.dispatcher.wake
@@ -97,7 +102,11 @@ class Application:
         log.info("Watchlist loaded", entries=len(self.cache))
 
     async def close(self) -> None:
-        for closer in (getattr(self.source, "close", None), self.telegram.close if self.telegram else None):
+        for closer in (
+            getattr(self.source, "close", None),
+            self.telegram.close if self.telegram else None,
+            self.telegram2.close if self.telegram2 else None,
+        ):
             if closer:
                 try:
                     await closer()
@@ -155,11 +164,12 @@ class Application:
                     min_conf=self.settings.min_pattern_confidence.value,
                 ),
             )
-        if self.telegram:
-            try:
-                await self.telegram.set_commands()
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Could not set Telegram command menu", error=str(exc)[:200])
+        for client in (self.telegram, self.telegram2):
+            if client:
+                try:
+                    await client.set_commands()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Could not set Telegram command menu", error=str(exc)[:200])
         stop = self.stop_event
         tasks: list[tuple[str, Callable[[], Awaitable[None]]]] = [
             ("collector-confirmed", lambda: self.collector.run_confirmed(stop)),
@@ -174,6 +184,10 @@ class Application:
         if self.telegram and self.settings.telegram_commands_enabled:
             tasks.append(
                 ("telegram-commands", lambda: run_command_loop(self.telegram, self.settings.telegram_chat_ids, self.commands, stop))
+            )
+        if self.telegram2 and self.settings.telegram_commands_enabled:
+            tasks.append(
+                ("telegram2-commands", lambda: run_command_loop(self.telegram2, self.settings.bot2_chat_ids, self.commands, stop))
             )
         running = [asyncio.create_task(supervise(name, fn, stop), name=name) for name, fn in tasks]
         await stop.wait()
@@ -236,22 +250,25 @@ async def _check(settings: Settings) -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"✘ TRON API: {exc}")
         ok = False
-    if app.telegram:
+    bots = [(app.telegram, settings.telegram_chat_ids, "bot 1"), (app.telegram2, settings.bot2_chat_ids, "bot 2")]
+    if not app.telegram:
+        print("⚠ Telegram not configured (alerts go to stdout)")
+    for client, chats, label in bots:
+        if not client:
+            continue
         try:
-            me = await app.telegram.get_me()
-            print(f"✔ Telegram bot @{me.get('username')}")
-            for chat in settings.telegram_chat_ids:
+            me = await client.get_me()
+            print(f"✔ Telegram {label} @{me.get('username')}")
+            for chat in chats:
                 try:
-                    await app.telegram.send_message(chat, "✅ TRON USDT monitor: configuration check OK")
-                    print(f"✔ test message sent to chat {chat}")
+                    await client.send_message(chat, "✅ TRON USDT monitor: configuration check OK")
+                    print(f"✔ {label}: test message sent to chat {chat}")
                 except Exception as exc:  # noqa: BLE001
-                    print(f"✘ Telegram chat {chat}: {exc}  (has this account pressed Start on the bot?)")
+                    print(f"✘ {label}: chat {chat}: {exc}  (has this account pressed Start on the bot?)")
                     ok = False
         except Exception as exc:  # noqa: BLE001
-            print(f"✘ Telegram: {exc}")
+            print(f"✘ Telegram {label}: {exc}")
             ok = False
-    else:
-        print("⚠ Telegram not configured (alerts go to stdout)")
     await app.close()
     return 0 if ok else 1
 

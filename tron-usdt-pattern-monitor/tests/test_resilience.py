@@ -305,3 +305,26 @@ async def test_only_alertable_pairs_go_through_matching(make_harness):
     assert pair in h.app.cache.match_pairs(alert_on_weakened=True)
     h.app.cache.pending_pairs.add(pair)  # a pending test keeps the follow-up watch alive
     assert pair in h.app.cache.match_pairs()
+
+
+async def test_second_bot_gets_same_alerts_with_its_own_titles(make_harness):
+    from app.telegram.alerts import RecordingSink
+
+    h = await make_harness(notification_title="🏦 OKX wallet detected")
+    bot2 = RecordingSink(fail_times=1)
+    h.app.dispatcher.extra_channels = [(bot2, ["🐰 Rabby Wallet detected", "🔷 Exodus Wallet detected"])]
+    for i in range(3):
+        await h.app.send_system(f"t{i}", f"hello {i}")
+    for _ in range(3):
+        await h.app.dispatcher.flush()
+    assert [m.split("\n")[0] for m in h.rec.messages] == ["<b>🏦 OKX wallet detected</b>"] * 3  # no duplicates
+    heads = [m.split("\n")[0] for m in bot2.messages]
+    assert len(heads) == 3 and set(heads) == {"<b>🐰 Rabby Wallet detected</b>", "<b>🔷 Exodus Wallet detected</b>"}
+    assert all(a.status == "SENT" for a in await h.alerts())
+
+
+def test_bot2_settings():
+    s = make_settings("sqlite+aiosqlite://", bot2_telegram_bot_token="T", bot2_telegram_chat_id="1, 2",
+                      bot2_notification_title="A, B")
+    assert s.bot2_enabled and s.bot2_chat_ids == ["1", "2"] and s.bot2_titles == ["A", "B"]
+    assert not make_settings("sqlite+aiosqlite://").bot2_enabled

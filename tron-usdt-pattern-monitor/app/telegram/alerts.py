@@ -83,21 +83,66 @@ class CompositeSink:
         return mid
 
 
+def with_title(text: str, titles: list[str], alert_id: int) -> str:
+    """Prefix the alert with one of the titles; several titles alternate by alert id
+    (stable across retries)."""
+    if not titles:
+        return text
+    import html as _html
+
+    return f"<b>{_html.escape(titles[alert_id % len(titles)])}</b>\n{text}"
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
 class AlertDispatcher:
-    def __init__(self, settings: Settings, session_factory: async_sessionmaker, sink: AlertSink) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        session_factory: async_sessionmaker,
+        sink: AlertSink,
+        extra_channels: list[tuple[AlertSink, list[str]]] | None = None,
+    ) -> None:
         self.s = settings
         self.sf = session_factory
         self.sink = sink
+        self.extra_channels = list(extra_channels or [])
+        self._channels_done: dict[int, set[int]] = {}
         self._wake = asyncio.Event()
         self.sent = 0
         self.failed = 0
 
     def wake(self) -> None:
         self._wake.set()
+
+    async def _deliver(self, alert_id: int, text: str) -> str | None:
+        """Send to every channel (main bot + optional extra bots), each with its own
+        title.  Channels that already delivered this alert are skipped on retry."""
+        channels = [(self.sink, self.s.notification_titles), *self.extra_channels]
+        done = self._channels_done.setdefault(alert_id, set())
+        first_id: str | None = None
+        errors: list[Exception] = []
+        for i, (sink, titles) in enumerate(channels):
+            if i in done:
+                continue
+            try:
+                mid = await sink.send(with_title(text, titles, alert_id))
+                done.add(i)
+                first_id = first_id or mid
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        if errors:
+            if len(channels) == 1:
+                raise errors[0]
+            raise SendError(
+                "; ".join(f"{type(e).__name__}: {e}" for e in errors),
+                retryable=all(getattr(e, "retryable", True) for e in errors),
+                retry_after=max((getattr(e, "retry_after", None) or 0) for e in errors) or None,
+            )
+        self._channels_done.pop(alert_id, None)
+        return first_id
 
     async def recover(self) -> None:
         async with self.sf() as s, s.begin():
@@ -117,15 +162,9 @@ class AlertDispatcher:
             alert.status = AlertStatus.SENDING.value
             alert.attempts += 1
             alert_id, text, attempts = alert.id, alert.message_text, alert.attempts
-        titles = self.s.notification_titles
-        if titles:
-            import html as _html
-
-            title = titles[alert_id % len(titles)]  # alternate, stable across retries
-            text = f"<b>{_html.escape(title)}</b>\n{text}"
         start = _utcnow()
         try:
-            message_id = await self.sink.send(text)
+            message_id = await self._deliver(alert_id, text)
         except Exception as exc:  # noqa: BLE001
             retryable = getattr(exc, "retryable", True)
             retry_after = getattr(exc, "retry_after", None)
