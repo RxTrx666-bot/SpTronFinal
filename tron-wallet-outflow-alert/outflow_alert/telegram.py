@@ -132,7 +132,8 @@ class StatusSnapshot:
     poll_interval_seconds: float
     confirmation_mode: str
     last_poll_ms: int | None
-    transfers_checked: int
+    transfers_sent: int
+    transfers_sent_today: int
     now_ms: int
 
 
@@ -185,7 +186,7 @@ def format_status(s: StatusSnapshot) -> str:
         f"⚡ API latency: {latency}",
         f"🛰️ Mode: account · poll {_fmt_seconds(s.poll_interval_seconds)} · {e(s.confirmation_mode)}",
         f"🕒 Last poll: {_fmt_ago(s.last_poll_ms, s.now_ms)}",
-        f"🔁 Transfers checked: {s.transfers_checked:,}",
+        f"📤 Transfers sent: {s.transfers_sent:,} (today: {s.transfers_sent_today:,})",
     ]
     if s.poll_error and not s.paused:
         lines.append(f"⚠️ Last error: {e(s.poll_error[:150])}")

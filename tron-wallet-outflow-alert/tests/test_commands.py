@@ -7,7 +7,7 @@ import pytest
 from outflow_alert.commands import CommandHandler
 from outflow_alert.storage import now_ms
 from outflow_alert.telegram import StatusSnapshot, format_status
-from tests.fakes import USDT, WALLET
+from tests.fakes import OTHER, USDT, WALLET
 
 EXPECTED_PAUSED = """📊 BOT STATUS
 ━━━━━━━━━━━━━━━━━━
@@ -24,13 +24,13 @@ TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
 ⚡ API latency: 20 ms (avg 123 ms)
 🛰️ Mode: account · poll 2s · fast
 🕒 Last poll: never
-🔁 Transfers checked: 0"""
+📤 Transfers sent: 0 (today: 0)"""
 
 
 def snapshot(**kw) -> StatusSnapshot:
     base = dict(paused=True, poll_error=None, wallet=WALLET, contract=USDT, last_latency_ms=20.4,
                 avg_latency_ms=122.6, poll_interval_seconds=2.0, confirmation_mode="fast",
-                last_poll_ms=None, transfers_checked=0, now_ms=1_760_000_000_000)
+                last_poll_ms=None, transfers_sent=0, transfers_sent_today=0, now_ms=1_760_000_000_000)
     base.update(kw)
     return StatusSnapshot(**base)
 
@@ -41,10 +41,10 @@ def test_status_matches_requested_layout_exactly():
 
 def test_status_running_variants():
     t = 1_760_000_000_000
-    text = format_status(snapshot(paused=False, last_poll_ms=t - 3000, transfers_checked=1234, now_ms=t))
+    text = format_status(snapshot(paused=False, last_poll_ms=t - 3000, transfers_sent=1234, transfers_sent_today=7, now_ms=t))
     assert "🚦 Status: ▶️ RUNNING" in text and "📡 Monitoring: 🟢 ACTIVE" in text
     assert "🕒 Last poll: 2025-10-09 08:53:17 UTC (3s ago)" in text
-    assert "🔁 Transfers checked: 1,234" in text
+    assert "📤 Transfers sent: 1,234 (today: 7)" in text
     err = format_status(snapshot(paused=False, last_poll_ms=t, poll_error="TronGrid HTTP 503", now_ms=t))
     assert "📡 Monitoring: 🔴 ERROR" in err and "TronGrid HTTP 503" in err
     assert "⚡ API latency: n/a" in format_status(snapshot(last_latency_ms=None, avg_latency_ms=None))
@@ -138,3 +138,19 @@ async def test_transfers_checked_counts_each_transfer_once(build, grid):
         await m.poll_once()
     assert m.db.transfers_checked() == 2
 
+
+
+@pytest.mark.asyncio
+async def test_status_counts_transfers_sent(build, grid, tg):
+    from outflow_alert.commands import start_of_utc_day_ms
+
+    m = build(telegram_chat_ids=("-1", "-2"), amounts_raw=())
+    grid.add_transfer(1, 10_000_000, ts=start_of_utc_day_ms() - 3_600_000)  # yesterday
+    grid.add_transfer(2, 5_000_000, ts=now_ms())
+    grid.add_transfer(3, 7_000_000, ts=now_ms() + 1, sender=OTHER, recipient=WALLET)  # incoming
+    m.db.reset_cursor(start_of_utc_day_ms() - 3_600_000)
+    await m.poll_once()
+    await m.deliver_due()
+    text = CommandHandler(m, m.tg).status_text()
+    assert "📤 Transfers sent: 2 (today: 1)" in text
+    assert "Transfers checked" not in text

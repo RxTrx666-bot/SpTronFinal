@@ -18,6 +18,10 @@ import logging
 from outflow_alert.deletion import delete_alert, format_results
 from outflow_alert.monitor import Monitor
 from outflow_alert.storage import now_ms
+
+
+def start_of_utc_day_ms() -> int:
+    return now_ms() // 86_400_000 * 86_400_000
 from outflow_alert.telegram import SendError, StatusSnapshot, TelegramClient, format_status
 
 log = logging.getLogger(__name__)
@@ -62,7 +66,8 @@ class CommandHandler:
                 poll_interval_seconds=self.m.s.poll_interval_seconds,
                 confirmation_mode=self.m.s.confirmation_mode,
                 last_poll_ms=self.m.last_poll_ms,
-                transfers_checked=self.m.db.transfers_checked(),
+                transfers_sent=self.m.db.transfer_count(),
+                transfers_sent_today=self.m.db.transfer_count(start_of_utc_day_ms()),
                 now_ms=now_ms(),
             )
         )

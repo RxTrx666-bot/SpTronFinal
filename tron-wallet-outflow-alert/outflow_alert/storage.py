@@ -283,8 +283,13 @@ class Storage:
         row = self._db.execute("SELECT outcome FROM verified_txs WHERE txid = ?", (txid,)).fetchone()
         return row["outcome"] if row else None
 
-    def transfer_count(self) -> int:
-        return int(self._db.execute("SELECT COUNT(*) FROM transfers").fetchone()[0])
+    def transfer_count(self, since_block_ts_ms: int | None = None) -> int:
+        """Verified outgoing transfers that were alerted (each counted once, whatever the number of chats)."""
+        if since_block_ts_ms is None:
+            return int(self._db.execute("SELECT COUNT(*) FROM transfers").fetchone()[0])
+        return int(self._db.execute(
+            "SELECT COUNT(*) FROM transfers WHERE block_ts >= ?", (int(since_block_ts_ms),)
+        ).fetchone()[0])
 
     # ------------------------------------------------------------------ outbox
     def due_outbox(self, limit: int = 20) -> list[OutboxItem]:
